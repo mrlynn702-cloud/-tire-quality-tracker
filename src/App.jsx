@@ -1,4 +1,22 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+
+const SUPABASE_URL = "https://xygvrhzvieulmexyjxuv.supabase.co";
+const SUPABASE_KEY = "sb_publishable_wCNv0fp4POlUtncwJrug5g_6dNLyXbU";
+
+const sbFetch = async (method, body) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues" + (method === "GET" ? "?select=*&order=created_at.desc" : ""), {
+    method,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": "Bearer " + SUPABASE_KEY,
+      "Content-Type": "application/json",
+      "Prefer": method === "POST" ? "return=representation" : "",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return method === "DELETE" ? null : res.json();
+};
 
 const BRANDS = ["Deestone", "Bluhorse"];
 const PRODUCT_TYPES = ["Tire MC T/T", "Tire MC T/L", "Tire BC", "Tube MC", "Tube BC"];
@@ -42,7 +60,38 @@ const ST = {
 export default function App() {
   const [view, setView] = useState("dashboard");
   const [issues, setIssues] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [caseCounter, setCaseCounter] = useState(1);
+
+  useEffect(() => {
+    sbFetch("GET").then(data => {
+      const mapped = data.map(r => ({
+        id: r.id,
+        caseNo: r.case_no,
+        date: r.date,
+        claimDate: r.claim_date,
+        claimRefNo: r.claim_ref_no,
+        brand: r.brand,
+        productType: r.product_type,
+        tireModel: r.tire_model,
+        tireSize: r.tire_size,
+        tireCount: r.tire_count,
+        tireWeek: r.tire_week,
+        issueType: r.issue_type,
+        issueDetail: r.issue_detail,
+        description: r.description,
+        reporterName: r.reporter_name,
+        shopName: r.shop_name,
+        shopTier: r.shop_tier,
+        distributorName: r.distributor_name,
+        province: r.province,
+        images: r.images || [],
+        videos: r.videos || [],
+      }));
+      setIssues(mapped);
+      if (mapped.length > 0) setCaseCounter(mapped.length + 1);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
   const [form, setForm] = useState(initForm());
   const [search, setSearch] = useState("");
   const [fBrand, setFBrand] = useState("ทั้งหมด");
@@ -69,7 +118,7 @@ export default function App() {
     ).then(res => setForm(p => ({ ...p, [field]: [...p[field], ...res] })));
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.tireModel || !form.reporterName || !form.shopName) {
       showToast("กรุณากรอกข้อมูลที่จำเป็น", "err");
       return;
@@ -79,11 +128,39 @@ export default function App() {
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     const dd = String(now.getDate()).padStart(2, "0");
     const caseNo = "C" + yy + mm + dd + String(caseCounter).padStart(3, "0");
-    setIssues(p => [{ ...form, id: Date.now(), caseNo }, ...p]);
-    setCaseCounter(c => c + 1);
-    setForm(initForm());
-    showToast("บันทึกสำเร็จ ✓");
-    setView("list");
+    const payload = {
+      case_no: caseNo,
+      date: form.date,
+      claim_date: form.claimDate,
+      claim_ref_no: form.claimRefNo,
+      brand: form.brand,
+      product_type: form.productType,
+      tire_model: form.tireModel,
+      tire_size: form.tireSize,
+      tire_count: form.tireCount,
+      tire_week: form.tireWeek,
+      issue_type: form.issueType,
+      issue_detail: form.issueDetail,
+      description: form.description,
+      reporter_name: form.reporterName,
+      shop_name: form.shopName,
+      shop_tier: form.shopTier,
+      distributor_name: form.distributorName,
+      province: form.province,
+      images: form.images,
+      videos: form.videos,
+    };
+    try {
+      const [saved] = await sbFetch("POST", payload);
+      const newIssue = { ...form, id: saved.id, caseNo };
+      setIssues(p => [newIssue, ...p]);
+      setCaseCounter(c => c + 1);
+      setForm(initForm());
+      showToast("บันทึกสำเร็จ ✓");
+      setView("list");
+    } catch {
+      showToast("บันทึกไม่สำเร็จ กรุณาลองใหม่", "err");
+    }
   };
 
   const filtered = useMemo(() => issues.filter(i => {
@@ -229,6 +306,15 @@ ${issue.images.length > 0 ? `<div class="section"><div class="section-title">ภ
         .fu { animation: fu 0.35s ease both; }
         @keyframes si { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
       `}</style>
+
+      {loading && (
+        <div style={{ position: "fixed", inset: 0, background: "#0f1117", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div style={{ textAlign: "center", color: "#94a3b8" }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>🔧</div>
+            <div style={{ fontSize: 16 }}>กำลังโหลดข้อมูล...</div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div style={{ position: "fixed", top: 20, right: 20, zIndex: 9999, background: toast.type === "err" ? "#ef4444" : "#22c55e", color: "#fff", padding: "12px 20px", borderRadius: 10, fontWeight: 600, fontSize: 14, animation: "si 0.3s ease", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>

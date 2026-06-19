@@ -44,7 +44,10 @@ const sbUploadImage = async (dataUrl, fileName) => {
 // ---------- constants ----------
 const BRANDS = ["Deestone", "Bluhorse"];
 const PRODUCT_TYPES = ["Tire MC T/T", "Tire MC T/L", "Tire BC", "Tube MC", "Tube BC"];
-const ISSUE_TYPES = ["บวม", "แตกร่องดอก", "แตกรอยต่อ", "จุ๊บหลุด", "อื่นๆ"];
+const ISSUE_TYPES_TIRE = ["รั่วหน้ายาง", "รั่วแก้มยาง", "แผลแก้มยาง", "แผลหน้ายาง", "บวมไหล่ยาง", "บวมแก้มยาง", "บวมหน้ายาง", "บวมใต้ท้องยาง", "ลวดคด", "สิ่งแปลกปลอมอยู่ในยาง", "แตกร่องดอกยาง", "ยางส่าย", "ยางไม่กลม", "ยางขึ้นขอบยาก", "ยางสกปรก", "อื่นๆ (ระบุในรายละเอียดปัญหา)"];
+const ISSUE_TYPES_TUBE = ["รั่ว", "ระเบิด", "เติมลมไม่เข้า", "มีสิ่งแปลกปลอม", "แผล", "ยางในบาง", "ฐานวาล์วแยกตัว", "วาล์วหลุดแกน", "อื่นๆ (ระบุในช่องรายละเอียดปัญหา)"];
+const ALL_ISSUE_TYPES = [...ISSUE_TYPES_TIRE, ...ISSUE_TYPES_TUBE];
+const issueTypesFor = (productType) => productType.startsWith("Tube") ? ISSUE_TYPES_TUBE : ISSUE_TYPES_TIRE;
 const CLAIM_TYPES = ["New Defective", "Claim"];
 const SHOP_TIERS = ["ดิสทริบิวเตอร์", "โฮลเซลล์", "ร้านค้าช่วง", "ร้านช่าง"];
 const NEEDS_DIST = ["ร้านค้าช่วง", "ร้านช่าง"];
@@ -55,7 +58,7 @@ function initForm() {
   return {
     date: new Date().toISOString().split("T")[0],
     claimDate: "", claimRefNo: "", claimType: "New Defective", brand: "Deestone", productType: "Tire MC T/T",
-    tireModel: "", tireSize: "", issueType: "บวม", issueDetail: "",
+    tireModel: "", tireSize: "", issueTypes: [], issueDetail: "",
     reporterName: "", shopName: "", shopTier: "ดิสทริบิวเตอร์",
     distributorName: "", province: "กรุงเทพมหานคร", tireWeek: "", images: [],
   };
@@ -354,6 +357,7 @@ export default function App() {
   const [fBrand, setFBrand] = useState("ทั้งหมด");
   const [fIssue, setFIssue] = useState("ทั้งหมด");
   const [fProd, setFProd] = useState("ทั้งหมด");
+  const [fMonth, setFMonth] = useState("ทั้งปี");
   const [sel, setSel] = useState(null);
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
@@ -372,7 +376,7 @@ export default function App() {
         claimRefNo: r.claim_ref_no, claimType: r.claim_type || "New Defective",
         brand: r.brand, productType: r.product_type,
         tireModel: r.tire_model, tireSize: r.tire_size, tireWeek: r.tire_week,
-        issueType: r.issue_type, issueDetail: r.issue_detail,
+        issueTypes: r.issue_types || (r.issue_type ? [r.issue_type] : []), issueDetail: r.issue_detail,
         reporterName: r.reporter_name, shopName: r.shop_name, shopTier: r.shop_tier,
         distributorName: r.distributor_name, province: r.province, images: r.images || [],
       }));
@@ -392,10 +396,23 @@ export default function App() {
 
   const validateForm = () => {
     if (!form.tireModel) return showToast("กรุณากรอกรุ่นยาง", "err"), false;
+    if (form.issueTypes.length === 0) return showToast("กรุณาเลือกประเภทปัญหาอย่างน้อย 1 ข้อ", "err"), false;
     if (!form.reporterName) return showToast("กรุณากรอกผู้รายงาน", "err"), false;
     if (!form.shopName) return showToast("กรุณากรอกชื่อร้านค้า", "err"), false;
     if (NEEDS_DIST.includes(form.shopTier) && !form.distributorName) return showToast("กรุณากรอกร้านตัวแทนที่รับมา", "err"), false;
     return true;
+  };
+
+  const toggleIssueType = (t) => setForm(p => ({
+    ...p,
+    issueTypes: p.issueTypes.includes(t) ? p.issueTypes.filter(x => x !== t) : [...p.issueTypes, t],
+  }));
+
+  // เปลี่ยนประเภทสินค้า → ล้างประเภทปัญหาที่ไม่อยู่ในกลุ่มใหม่
+  const onProductChange = (e) => {
+    const productType = e.target.value;
+    const valid = issueTypesFor(productType);
+    setForm(p => ({ ...p, productType, issueTypes: p.issueTypes.filter(t => valid.includes(t)) }));
   };
 
   const submit = async () => {
@@ -416,7 +433,7 @@ export default function App() {
         case_no: caseNo, date: form.date, claim_date: form.claimDate,
         claim_ref_no: form.claimRefNo, claim_type: form.claimType, brand: form.brand, product_type: form.productType,
         tire_model: form.tireModel, tire_size: form.tireSize, tire_week: form.tireWeek,
-        issue_type: form.issueType, issue_detail: form.issueDetail,
+        issue_types: form.issueTypes, issue_detail: form.issueDetail,
         reporter_name: form.reporterName, shop_name: form.shopName, shop_tier: form.shopTier,
         distributor_name: form.distributorName, province: form.province,
         images: uploadedImages,
@@ -447,20 +464,26 @@ export default function App() {
 
   const filtered = useMemo(() => issues.filter(i => {
     const q = search.toLowerCase();
-    return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, i.issueType].some(v => (v || "").toLowerCase().includes(q)))
+    return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
       && (fBrand === "ทั้งหมด" || i.brand === fBrand)
-      && (fIssue === "ทั้งหมด" || i.issueType === fIssue)
+      && (fIssue === "ทั้งหมด" || (i.issueTypes || []).includes(fIssue))
       && (fProd === "ทั้งหมด" || i.productType === fProd);
   }), [issues, search, fBrand, fIssue, fProd]);
 
   const exportCSV = () => {
-    const h = ["เลขเคส","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด","ลิงก์รูปภาพ"];
-    const rows = filtered.map(i => [
-      i.caseNo, i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
-      i.tireModel, i.tireSize, i.tireWeek, i.issueType, i.issueDetail, i.reporterName,
-      i.shopName, i.shopTier, i.distributorName, i.province,
-      (i.images || []).filter(im => im.url && !im.url.startsWith("data:")).map(im => im.url).join(" | "),
-    ]);
+    const imgUrls = (i) => (i.images || []).filter(im => im.url && !im.url.startsWith("data:")).map(im => im.url);
+    const maxImgs = Math.max(0, ...filtered.map(i => imgUrls(i).length));
+    const imgHeaders = Array.from({ length: maxImgs }, (_, k) => "รูปที่ " + (k + 1));
+    const h = ["เลขเคส","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
+    const rows = filtered.map(i => {
+      const urls = imgUrls(i);
+      const imgCols = Array.from({ length: maxImgs }, (_, k) => urls[k] || "");
+      return [
+        i.caseNo, i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
+        i.tireModel, i.tireSize, i.tireWeek, i.issueType, i.issueDetail, i.reporterName,
+        i.shopName, i.shopTier, i.distributorName, i.province, ...imgCols,
+      ];
+    });
     const csv = [h, ...rows].map(r => r.map(v => '"' + (v || "").toString().replace(/"/g, '""') + '"').join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv" }));

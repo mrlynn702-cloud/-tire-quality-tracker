@@ -78,6 +78,39 @@ const CSS = `
   .btn-indigo { background: linear-gradient(135deg, #6366f1, #8b5cf6) !important; }
   .btn-green { background: linear-gradient(135deg, #22c55e, #16a34a) !important; }
   .loading-overlay { position: fixed; inset: 0; background: #0f1117; display: flex; align-items: center; justify-content: center; z-index: 9999; }
+
+  /* responsive helpers */
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .filter-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .filter-row input, .filter-row select { width: auto; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .list-filter-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .hide-mobile { display: table-cell; }
+  .nav-label-full { display: inline; }
+  .nav-label-short { display: none; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 14px; }
+    .stat-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .chart-grid { grid-template-columns: 1fr; gap: 12px; }
+    .filter-row { flex-direction: column; width: 100%; }
+    .filter-row input, .filter-row select { width: 100% !important; }
+    .form-grid { grid-template-columns: 1fr; }
+    .list-filter-grid { grid-template-columns: 1fr 1fr; }
+    .detail-grid { grid-template-columns: 1fr; }
+    .hide-mobile { display: none; }
+    .nav-label-full { display: none; }
+    .nav-label-short { display: inline; }
+    .header-inner { height: 56px !important; }
+    .dash-head { flex-direction: column; align-items: stretch !important; }
+    h2.page-title { font-size: 19px !important; }
+    .stat-value { font-size: 24px !important; }
+    .stat-card-pad { padding: 14px !important; }
+  }
 `;
 
 const S = {
@@ -165,32 +198,73 @@ const KVList = ({ title, items }) => (
   </Card>
 );
 
-const ProgressList = ({ items, total, barClass }) => (
-  items.map((x, i) => (
-    <div key={i} style={{ marginBottom: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 13 }}>
-        <span>{x.label}</span><span style={{ fontWeight: 700 }}>{x.count}</span>
-      </div>
-      <div style={{ height: 6, background: "#2d3148", borderRadius: 3, overflow: "hidden" }}>
-        <div className={barClass} style={{ height: "100%", width: Math.min(100, (x.count / total) * 100) + "%", borderRadius: 3 }} />
-      </div>
-    </div>
-  ))
-);
+// Donut chart (pure SVG, no library)
+const Donut = ({ title, items }) => {
+  const total = items.reduce((s, x) => s + x.count, 0);
+  const size = 160, stroke = 26, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <Card title={null}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>{title}</div>
+      {total === 0
+        ? <div style={{ color: "#475569", textAlign: "center", padding: "30px 0" }}>ยังไม่มีข้อมูล</div>
+        : (
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", justifyContent: "center" }}>
+            <svg width={size} height={size} viewBox={"0 0 " + size + " " + size}>
+              <g transform={"rotate(-90 " + (size / 2) + " " + (size / 2) + ")"}>
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#2d3148" strokeWidth={stroke} />
+                {items.filter(x => x.count > 0).map((x, i) => {
+                  const frac = x.count / total;
+                  const dash = frac * c;
+                  const el = (
+                    <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={x.color} strokeWidth={stroke}
+                      strokeDasharray={dash + " " + (c - dash)} strokeDashoffset={-offset} />
+                  );
+                  offset += dash;
+                  return el;
+                })}
+              </g>
+              <text x="50%" y="48%" textAnchor="middle" fill="#f1f5f9" fontSize="26" fontWeight="700">{total}</text>
+              <text x="50%" y="62%" textAnchor="middle" fill="#64748b" fontSize="11">รายการ</text>
+            </svg>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {items.map(x => (
+                <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 3, background: x.color, display: "inline-block" }} />
+                  <span style={{ color: "#94a3b8", minWidth: 90 }}>{x.label}</span>
+                  <span style={{ fontWeight: 700, color: "#e2e8f0" }}>{x.count}</span>
+                  <span style={{ color: "#64748b", fontSize: 11 }}>({total ? Math.round(x.count / total * 100) : 0}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+    </Card>
+  );
+};
 
-const SplitStat = ({ title, items }) => (
-  <Card title={null}>
-    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>{title}</div>
-    <div style={{ display: "flex", gap: 12 }}>
-      {items.map(s => (
-        <div key={s.label} style={{ flex: 1, background: "#0f1117", borderRadius: 10, padding: 20, textAlign: "center", borderLeft: "3px solid " + s.color }}>
-          <div style={{ fontSize: 36, fontWeight: 700, color: s.color }}>{s.count}</div>
-          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{s.label}</div>
-        </div>
-      ))}
-    </div>
-  </Card>
-);
+// Vertical bar chart (pure SVG)
+const BarChart = ({ title, items, color }) => {
+  const max = Math.max(1, ...items.map(i => i.count));
+  return (
+    <Card title={null}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>{title}</div>
+      {items.every(i => i.count === 0)
+        ? <div style={{ color: "#475569", textAlign: "center", padding: "30px 0" }}>ยังไม่มีข้อมูล</div>
+        : (
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 160, padding: "0 4px" }}>
+            {items.map((it, i) => (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>{it.count}</div>
+                <div style={{ width: "100%", maxWidth: 46, height: (it.count / max * 110) + "px", minHeight: it.count > 0 ? 4 : 0, background: it.color || color, borderRadius: "6px 6px 0 0", transition: "height 0.4s ease" }} />
+                <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", lineHeight: 1.2 }}>{it.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+    </Card>
+  );
+};
 
 // ---------- PDF builder ----------
 function buildPdfHtml(issue) {
@@ -402,7 +476,6 @@ export default function App() {
   };
 
   const total = issues.length;
-  const itCounts = ISSUE_TYPES.map(t => ({ label: t, count: filtered.filter(i => i.issueType === t).length })).filter(x => x.count > 0).sort((a, b) => b.count - a.count);
   const ptCounts = PRODUCT_TYPES.map(t => ({ t, c: filtered.filter(i => i.productType === t).length }));
   const pvCounts = [...new Set(filtered.map(i => i.province))].map(p => ({ p, c: filtered.filter(i => i.province === p).length })).sort((a, b) => b.c - a.c).slice(0, 5);
   const needsDist = NEEDS_DIST.includes(form.shopTier);
@@ -427,7 +500,7 @@ export default function App() {
       {toast && <div className={"toast toast-" + toast.type}>{toast.msg}</div>}
 
       <div style={S.hdr}>
-        <div style={S.hdrIn}>
+        <div className="header-inner" style={S.hdrIn}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div className="logo-icon" style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔧</div>
             <div>
@@ -436,53 +509,93 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {[["dashboard", "📊 Dashboard"], ["form", "➕ บันทึก"], ["list", "📋 รายการ"]].map(([v, l]) => (
+            {[["dashboard", "📊", "Dashboard"], ["form", "➕", "บันทึก"], ["list", "📋", "รายการ"]].map(([v, icon, l]) => (
               <button key={v} onClick={() => navGo(v)}
-                style={{ ...S.btn, padding: "9px 16px", background: view === v ? "#6366f1" : "transparent", color: view === v ? "#fff" : "#94a3b8", border: view === v ? "none" : "1px solid #2d3148" }}>{l}</button>
+                style={{ ...S.btn, padding: "9px 14px", background: view === v ? "#6366f1" : "transparent", color: view === v ? "#fff" : "#94a3b8", border: view === v ? "none" : "1px solid #2d3148" }}>
+                <span className="nav-label-short">{icon}</span>
+                <span className="nav-label-full">{icon} {l}</span>
+              </button>
             ))}
           </div>
         </div>
       </div>
 
-      <div style={S.main}>
+      <div className="wrap">
 
         {/* DASHBOARD */}
         {view === "dashboard" && (
           <div className="fu">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
+            <div className="dash-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, gap: 16 }}>
               <div>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>ภาพรวมปัญหาคุณภาพยาง</h2>
+                <h2 className="page-title" style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>ภาพรวมปัญหาคุณภาพยาง</h2>
                 <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>ข้อมูลทั้งหมด {total} รายการ</p>
               </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <input style={{ ...S.inp, width: 220 }} placeholder="🔍 ค้นหา รุ่น, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} />
-                <select style={{ ...S.inp, width: 150 }} value={fBrand} onChange={e => setFBrand(e.target.value)}>
+              <div className="filter-row">
+                <input style={{ ...S.inp, width: 200 }} placeholder="🔍 ค้นหา รุ่น, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} />
+                <select style={{ ...S.inp, width: 140 }} value={fBrand} onChange={e => setFBrand(e.target.value)}>
                   <option>ทั้งหมด</option>{BRANDS.map(b => <option key={b}>{b}</option>)}
                 </select>
-                <select style={{ ...S.inp, width: 160 }} value={fIssue} onChange={e => setFIssue(e.target.value)}>
+                <select style={{ ...S.inp, width: 150 }} value={fIssue} onChange={e => setFIssue(e.target.value)}>
                   <option>ทั้งหมด</option>{ISSUE_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
-                <select style={{ ...S.inp, width: 160 }} value={fProd} onChange={e => setFProd(e.target.value)}>
+                <select style={{ ...S.inp, width: 150 }} value={fProd} onChange={e => setFProd(e.target.value)}>
                   <option>ทั้งหมด</option>{PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
                 {hasFilters && <button onClick={clearFilters} style={{ ...S.btn, background: "#334155", color: "#94a3b8", padding: "10px 14px" }}>ล้าง</button>}
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginBottom: 20 }}>
+            <div className="stat-grid">
               <StatCard icon="📌" value={filtered.length} label="ทั้งหมด" color="#6366f1" />
               <StatCard icon="🔴" value={filtered.filter(i => i.brand === "Deestone").length} label="Deestone" color="#e63946" />
               <StatCard icon="🔵" value={filtered.filter(i => i.brand === "Bluhorse").length} label="Bluhorse" color="#1d4ed8" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="chart-grid">
+              {/* Donut: แบรนด์ */}
+              <Donut title="แบ่งตามแบรนด์" items={[
+                { label: "Deestone", color: "#e63946", count: filtered.filter(i => i.brand === "Deestone").length },
+                { label: "Bluhorse", color: "#1d4ed8", count: filtered.filter(i => i.brand === "Bluhorse").length },
+              ]} />
+
+              {/* Donut: New Defective / Claim */}
+              <Donut title="แบ่งตามประเภทยางเคลม" items={[
+                { label: "New Defective", color: "#22c55e", count: filtered.filter(i => (i.claimType || "New Defective") === "New Defective").length },
+                { label: "Claim", color: "#f59e0b", count: filtered.filter(i => i.claimType === "Claim").length },
+              ]} />
+
+              {/* Bar: ประเภทปัญหา */}
+              <BarChart title="แบ่งตามประเภทปัญหา" color="#6366f1" items={ISSUE_TYPES.map((t, i) => ({
+                label: t, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#64748b"][i % 5],
+                count: filtered.filter(x => x.issueType === t).length,
+              }))} />
+
+              {/* Bar: Tire/Tube */}
+              <BarChart title="แบ่งตามยาง Tire / Tube" items={[
+                { label: "Tire", color: "#6366f1", count: filtered.filter(i => i.productType.startsWith("Tire")).length },
+                { label: "Tube", color: "#f59e0b", count: filtered.filter(i => i.productType.startsWith("Tube")).length },
+              ]} />
+
+              {/* จังหวัด Top 5 - horizontal bars */}
               <Card title={null}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>ประเภทปัญหาที่พบ</div>
-                {itCounts.length === 0
-                  ? <div style={{ color: "#475569", textAlign: "center", padding: "20px 0" }}>ยังไม่มีข้อมูล</div>
-                  : <ProgressList items={itCounts} total={filtered.length} barClass="bar-purple" />}
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>จังหวัดที่พบปัญหาสูงสุด (Top 5)</div>
+                {pvCounts.length === 0 ? <div style={{ color: "#475569", textAlign: "center", padding: "20px 0" }}>ยังไม่มีข้อมูล</div>
+                  : pvCounts.map((p, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#2d3148", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#6366f1", flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 13 }}>
+                          <span>{p.p}</span><span style={{ fontWeight: 700 }}>{p.c}</span>
+                        </div>
+                        <div style={{ height: 6, background: "#2d3148", borderRadius: 3 }}>
+                          <div className="bar-orange" style={{ height: "100%", width: (p.c / pvCounts[0].c * 100) + "%", borderRadius: 3 }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
               </Card>
 
+              {/* ประเภทสินค้า - list */}
               <Card title={null}>
                 <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>ประเภทสินค้า</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -494,34 +607,6 @@ export default function App() {
                   ))}
                 </div>
               </Card>
-
-              <Card title={null}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, color: "#f1f5f9" }}>จังหวัดที่พบปัญหาสูงสุด (Top 5)</div>
-                {pvCounts.length === 0 ? <div style={{ color: "#475569", textAlign: "center", padding: "20px 0" }}>ยังไม่มีข้อมูล</div>
-                  : pvCounts.map((p, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#2d3148", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#6366f1", flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 13 }}>
-                          <span>{p.p}</span><span style={{ fontWeight: 700 }}>{p.c}</span>
-                        </div>
-                        <div style={{ height: 4, background: "#2d3148", borderRadius: 2 }}>
-                          <div className="bar-orange" style={{ height: "100%", width: (p.c / pvCounts[0].c * 100) + "%", borderRadius: 2 }} />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </Card>
-
-              <SplitStat title="แบ่งตามยาง Tire หรือ Tube" items={[
-                { label: "Tire", color: "#6366f1", count: filtered.filter(i => i.productType.startsWith("Tire")).length },
-                { label: "Tube", color: "#f59e0b", count: filtered.filter(i => i.productType.startsWith("Tube")).length },
-              ]} />
-
-              <SplitStat title="แบ่งตามประเภทยางเคลม" items={[
-                { label: "New Defective", color: "#22c55e", count: filtered.filter(i => (i.claimType || "New Defective") === "New Defective").length },
-                { label: "Claim", color: "#f59e0b", count: filtered.filter(i => i.claimType === "Claim").length },
-              ]} />
             </div>
           </div>
         )}
@@ -536,7 +621,7 @@ export default function App() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
               <Card title="ข้อมูลพื้นฐาน">
-                <div style={S.grid2}>
+                <div className="form-grid">
                   <Field label="แบรนด์" required>
                     <ButtonGroup value={form.brand} onChange={v => setForm(p => ({ ...p, brand: v }))} options={BRANDS} getColor={b => BC[b]} />
                   </Field>
@@ -556,7 +641,7 @@ export default function App() {
               </Card>
 
               <Card title="ข้อมูลร้านค้า">
-                <div style={S.grid2}>
+                <div className="form-grid">
                   <TField label="วันที่รับยางเคลม" type="date" value={form.claimDate} onChange={setF("claimDate")} />
                   <TField label="เลขที่ใบเคลม" placeholder="เช่น CLM-2026-001" value={form.claimRefNo} onChange={setF("claimRefNo")} />
                   <Field label="ประเภทยางเคลม">
@@ -658,7 +743,7 @@ export default function App() {
               <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export CSV</button>
             </div>
             <Card style={{ marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
+              <div className="list-filter-grid">
                 <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>ค้นหา</label><input style={S.inp} placeholder="รุ่นยาง, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} /></div>
                 <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>แบรนด์</label><select style={S.inp} value={fBrand} onChange={e => setFBrand(e.target.value)}><option>ทั้งหมด</option>{BRANDS.map(b => <option key={b}>{b}</option>)}</select></div>
                 <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>ปัญหา</label><select style={S.inp} value={fIssue} onChange={e => setFIssue(e.target.value)}><option>ทั้งหมด</option>{ISSUE_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
@@ -666,11 +751,11 @@ export default function App() {
               </div>
             </Card>
             <Card style={{ padding: 0, overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "#1e2235", borderBottom: "1px solid #2d3148" }}>
-                    {["เลขเคส", "วันที่", "แบรนด์", "สินค้า", "รุ่น / ขนาด", "ปัญหา", "ร้านค้า", "จังหวัด", "ผู้รายงาน"].map(h => (
-                      <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
+                    {[["เลขเคส", false], ["วันที่", false], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
+                      <th key={h} className={hide ? "hide-mobile" : ""} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -682,16 +767,16 @@ export default function App() {
                         <td style={{ padding: "12px 14px", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap" }}>{issue.caseNo}</td>
                         <td style={{ padding: "12px 14px", color: "#94a3b8", whiteSpace: "nowrap" }}>{issue.date}</td>
                         <td style={{ padding: "12px 14px" }}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
-                        <td style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.productType}</td>
+                        <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.productType}</td>
                         <td style={{ padding: "12px 14px" }}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
                         <td style={{ padding: "12px 14px", color: "#e2e8f0" }}>{issue.issueType}</td>
-                        <td style={{ padding: "12px 14px" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
-                        <td style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.province}</td>
-                        <td style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.reporterName}</td>
+                        <td className="hide-mobile" style={{ padding: "12px 14px" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
+                        <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.province}</td>
+                        <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.reporterName}</td>
                       </tr>
                     ))}
                 </tbody>
-              </table>
+              </table></div>
             </Card>
           </div>
         )}
@@ -704,7 +789,7 @@ export default function App() {
               <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
               <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ลบข้อมูล</button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="detail-grid">
               <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                   <div className="logo-icon" style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🔧</div>

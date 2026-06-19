@@ -19,6 +19,24 @@ const sbFetch = async (method, body) => {
   return method === "DELETE" ? null : res.json();
 };
 
+// โหลดรายการแบบเร็ว: ไม่ดึงคอลัมน์ images (รูปภาพ) เพื่อให้เปิดแอพเร็วขึ้น
+const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province";
+const sbFetchList = async () => {
+  const url = SUPABASE_URL + "/rest/v1/issues?select=" + LIST_COLUMNS + "&order=created_at.desc";
+  const res = await fetch(url, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+};
+
+// โหลดรูปภาพของเคสเดียว (ใช้ตอนเปิดดูรายละเอียด)
+const sbFetchImages = async (id) => {
+  const url = SUPABASE_URL + "/rest/v1/issues?id=eq." + id + "&select=images";
+  const res = await fetch(url, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return (data[0] && data[0].images) || [];
+};
+
 const sbDelete = async (id) => {
   const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, { method: "DELETE", headers: sbHeaders() });
   if (!res.ok) throw new Error(await res.text());
@@ -320,7 +338,7 @@ function buildPdfHtml(issue) {
     + '</div>';
 
   const issueSection = '<div class="sec"><div class="sech">ข้อมูลปัญหา</div><table>'
-    + row("ประเภทปัญหา", issue.issueType)
+    + row("ประเภทปัญหา", (issue.issueTypes || []).join(", "))
     + row("รายละเอียดปัญหา", issue.issueDetail)
     + '</table></div>';
 
@@ -344,6 +362,32 @@ function buildPdfHtml(issue) {
   return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + issue.caseNo + '</title>' + styleTag + '</head><body>'
     + toolbar + header + highlight + issueSection + shopSection + imagesSection + footer + '</body></html>';
 }
+
+// บีบอัดรูปก่อนเก็บ: ย่อด้านยาวสุดไม่เกิน 1600px และลดคุณภาพ JPEG เหลือ 80%
+// ทำให้ไฟล์เล็กลงมาก (เก็บได้หลายเคสขึ้น) แต่ยังคมชัดพอสำหรับตรวจสอบ/ขยายดู
+const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+        else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = reject;
+    img.src = reader.result;
+  };
+  reader.onerror = reject;
+  reader.readAsDataURL(file);
+});
 
 // ---------- App ----------
 export default function App() {
@@ -370,7 +414,7 @@ export default function App() {
   const setF = (key) => (e) => setForm(p => ({ ...p, [key]: e.target.value }));
 
   useEffect(() => {
-    sbFetch("GET").then(data => {
+    sbFetchList().then(data => {
       const mapped = data.map(r => ({
         id: r.id, caseNo: r.case_no, date: r.date, claimDate: r.claim_date,
         claimRefNo: r.claim_ref_no, claimType: r.claim_type || "New Defective",
@@ -378,7 +422,7 @@ export default function App() {
         tireModel: r.tire_model, tireSize: r.tire_size, tireWeek: r.tire_week,
         issueTypes: r.issue_types || (r.issue_type ? [r.issue_type] : []), issueDetail: r.issue_detail,
         reporterName: r.reporter_name, shopName: r.shop_name, shopTier: r.shop_tier,
-        distributorName: r.distributor_name, province: r.province, images: r.images || [],
+        distributorName: r.distributor_name, province: r.province, images: [], imagesLoaded: false,
       }));
       setIssues(mapped);
       if (mapped.length > 0) setCaseCounter(mapped.length + 1);
@@ -387,10 +431,9 @@ export default function App() {
 
   const addFiles = (e) => {
     const files = Array.from(e.target.files);
-    Promise.all(files.map(f => new Promise(res => {
-      const r = new FileReader();
-      r.onload = () => res({ name: f.name, url: r.result });
-      r.readAsDataURL(f);
+    Promise.all(files.map(async (f) => ({
+      name: f.name.replace(/\.\w+$/, "") + ".jpg",
+      url: await compressImage(f, 1600, 0.8),
     }))).then(res => setForm(p => ({ ...p, images: [...p.images, ...res] })));
   };
 
@@ -467,20 +510,52 @@ export default function App() {
     return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
       && (fBrand === "ทั้งหมด" || i.brand === fBrand)
       && (fIssue === "ทั้งหมด" || (i.issueTypes || []).includes(fIssue))
-      && (fProd === "ทั้งหมด" || i.productType === fProd);
-  }), [issues, search, fBrand, fIssue, fProd]);
+      && (fProd === "ทั้งหมด" || i.productType === fProd)
+      && (fMonth === "ทั้งปี" || (i.date || "").slice(0, 7) === fMonth);
+  }), [issues, search, fBrand, fIssue, fProd, fMonth]);
 
-  const exportCSV = () => {
+  // เดือนที่มีข้อมูล (สำหรับ dropdown) — รูปแบบ YYYY-MM
+  const monthOptions = useMemo(() => {
+    const set = [...new Set(issues.map(i => (i.date || "").slice(0, 7)).filter(Boolean))];
+    return set.sort().reverse();
+  }, [issues]);
+
+  const monthLabel = (ym) => {
+    if (ym === "ทั้งปี") return "ทั้งปี";
+    const [y, m] = ym.split("-");
+    const names = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+    return names[parseInt(m, 10)] + " " + y;
+  };
+
+  const exportCSV = async () => {
+    showToast("กำลังเตรียมไฟล์...");
+    // โหลดรูปของเคสที่ยังไม่เคยโหลด (สำหรับใส่ลิงก์ใน Excel)
+    const withImages = await Promise.all(filtered.map(async (i) => {
+      if (i.imagesLoaded) return i;
+      try {
+        const images = await sbFetchImages(i.id);
+        return { ...i, images, imagesLoaded: true };
+      } catch {
+        return i;
+      }
+    }));
+    setIssues(prev => prev.map(p => {
+      const found = withImages.find(w => w.id === p.id);
+      return found ? { ...p, images: found.images, imagesLoaded: true } : p;
+    }));
+
+    // เรียงเก่า -> ใหม่ (รายการที่เพิ่มใหม่อยู่ด้านล่าง)
+    const ordered = [...withImages].sort((a, b) => (a.caseNo || "").localeCompare(b.caseNo || ""));
     const imgUrls = (i) => (i.images || []).filter(im => im.url && !im.url.startsWith("data:")).map(im => im.url);
-    const maxImgs = Math.max(0, ...filtered.map(i => imgUrls(i).length));
+    const maxImgs = Math.max(0, ...ordered.map(i => imgUrls(i).length));
     const imgHeaders = Array.from({ length: maxImgs }, (_, k) => "รูปที่ " + (k + 1));
     const h = ["เลขเคส","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
-    const rows = filtered.map(i => {
+    const rows = ordered.map(i => {
       const urls = imgUrls(i);
       const imgCols = Array.from({ length: maxImgs }, (_, k) => urls[k] || "");
       return [
         i.caseNo, i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
-        i.tireModel, i.tireSize, i.tireWeek, i.issueType, i.issueDetail, i.reporterName,
+        i.tireModel, i.tireSize, i.tireWeek, (i.issueTypes || []).join(", "), i.issueDetail, i.reporterName,
         i.shopName, i.shopTier, i.distributorName, i.province, ...imgCols,
       ];
     });
@@ -492,9 +567,16 @@ export default function App() {
     showToast("Export CSV สำเร็จ");
   };
 
-  const exportPDF = (issue) => {
+  const exportPDF = async (issue) => {
+    let finalIssue = issue;
+    if (!issue.imagesLoaded) {
+      try {
+        const images = await sbFetchImages(issue.id);
+        finalIssue = { ...issue, images, imagesLoaded: true };
+      } catch {}
+    }
     const win = window.open("", "_blank");
-    win.document.write(buildPdfHtml(issue));
+    win.document.write(buildPdfHtml(finalIssue));
     win.document.close();
   };
 
@@ -502,10 +584,27 @@ export default function App() {
   const ptCounts = PRODUCT_TYPES.map(t => ({ t, c: filtered.filter(i => i.productType === t).length }));
   const pvCounts = [...new Set(filtered.map(i => i.province))].map(p => ({ p, c: filtered.filter(i => i.province === p).length })).sort((a, b) => b.c - a.c).slice(0, 5);
   const needsDist = NEEDS_DIST.includes(form.shopTier);
-  const hasFilters = search || fBrand !== "ทั้งหมด" || fIssue !== "ทั้งหมด" || fProd !== "ทั้งหมด";
+  const hasFilters = search || fBrand !== "ทั้งหมด" || fIssue !== "ทั้งหมด" || fProd !== "ทั้งหมด" || fMonth !== "ทั้งปี";
+
+  // นับจำนวนแต่ละประเภทปัญหา (Top 8) สำหรับกราฟ
+  const issueTypeCounts = useMemo(() => {
+    const counts = {};
+    filtered.forEach(i => (i.issueTypes || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
+    return Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
+  }, [filtered]);
 
   const navGo = (v) => { setView(v); setSel(null); setPreviewMode(false); };
-  const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); };
+
+  const openDetail = (issue) => {
+    setSel(issue);
+    if (!issue.imagesLoaded) {
+      sbFetchImages(issue.id).then(images => {
+        setSel(s => (s && s.id === issue.id) ? { ...s, images, imagesLoaded: true } : s);
+        setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
+      }).catch(() => {});
+    }
+  };
+  const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonth("ทั้งปี"); };
 
   return (
     <div style={S.page}>
@@ -554,14 +653,18 @@ export default function App() {
                 <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>ข้อมูลทั้งหมด {total} รายการ</p>
               </div>
               <div className="filter-row">
-                <input style={{ ...S.inp, width: 200 }} placeholder="🔍 ค้นหา รุ่น, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} />
-                <select style={{ ...S.inp, width: 140 }} value={fBrand} onChange={e => setFBrand(e.target.value)}>
+                <input style={{ ...S.inp, width: 180 }} placeholder="🔍 ค้นหา รุ่น, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} />
+                <select style={{ ...S.inp, width: 140 }} value={fMonth} onChange={e => setFMonth(e.target.value)}>
+                  <option value="ทั้งปี">📅 ทั้งปี</option>
+                  {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                </select>
+                <select style={{ ...S.inp, width: 130 }} value={fBrand} onChange={e => setFBrand(e.target.value)}>
                   <option>ทั้งหมด</option>{BRANDS.map(b => <option key={b}>{b}</option>)}
                 </select>
                 <select style={{ ...S.inp, width: 150 }} value={fIssue} onChange={e => setFIssue(e.target.value)}>
-                  <option>ทั้งหมด</option>{ISSUE_TYPES.map(t => <option key={t}>{t}</option>)}
+                  <option>ทั้งหมด</option>{ALL_ISSUE_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
-                <select style={{ ...S.inp, width: 150 }} value={fProd} onChange={e => setFProd(e.target.value)}>
+                <select style={{ ...S.inp, width: 140 }} value={fProd} onChange={e => setFProd(e.target.value)}>
                   <option>ทั้งหมด</option>{PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
                 {hasFilters && <button onClick={clearFilters} style={{ ...S.btn, background: "#334155", color: "#94a3b8", padding: "10px 14px" }}>ล้าง</button>}
@@ -587,14 +690,14 @@ export default function App() {
                 { label: "Claim", color: "#f59e0b", count: filtered.filter(i => i.claimType === "Claim").length },
               ]} />
 
-              {/* Bar: ประเภทปัญหา */}
-              <BarChart title="แบ่งตามประเภทปัญหา" color="#6366f1" items={ISSUE_TYPES.map((t, i) => ({
-                label: t, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#64748b"][i % 5],
-                count: filtered.filter(x => x.issueType === t).length,
+              {/* Bar: ประเภทปัญหา (Top 8) */}
+              <BarChart title="ประเภทปัญหาที่พบมากสุด (Top 8)" color="#6366f1" items={issueTypeCounts.map((x, i) => ({
+                label: x.label.length > 8 ? x.label.slice(0, 8) + "…" : x.label, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#ef4444", "#64748b"][i % 8],
+                count: x.count,
               }))} />
 
-              {/* Bar: Tire/Tube */}
-              <BarChart title="แบ่งตามยาง Tire / Tube" items={[
+              {/* Donut: Tire/Tube */}
+              <Donut title="แบ่งตามยาง Tire / Tube" items={[
                 { label: "Tire", color: "#6366f1", count: filtered.filter(i => i.productType.startsWith("Tire")).length },
                 { label: "Tube", color: "#f59e0b", count: filtered.filter(i => i.productType.startsWith("Tube")).length },
               ]} />
@@ -649,7 +752,7 @@ export default function App() {
                     <ButtonGroup value={form.brand} onChange={v => setForm(p => ({ ...p, brand: v }))} options={BRANDS} getColor={b => BC[b]} />
                   </Field>
                   <TField label="วันที่พบปัญหา" required type="date" value={form.date} onChange={setF("date")} />
-                  <SField label="ประเภทสินค้า" options={PRODUCT_TYPES} value={form.productType} onChange={setF("productType")} />
+                  <SField label="ประเภทสินค้า" options={PRODUCT_TYPES} value={form.productType} onChange={onProductChange} />
                   <TField label="สัปดาห์ยาง / Serial Number" placeholder="เช่น 2524, SN-001" value={form.tireWeek} onChange={setF("tireWeek")} />
                   <TField label="รุ่นยาง" required placeholder="เช่น D-268" value={form.tireModel} onChange={setF("tireModel")} />
                   <TField label="ขนาดยาง" placeholder="เช่น 185/65R15" value={form.tireSize} onChange={setF("tireSize")} />
@@ -658,7 +761,21 @@ export default function App() {
 
               <Card title="ข้อมูลปัญหา">
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <SField label="ประเภทปัญหา" options={ISSUE_TYPES} value={form.issueType} onChange={setF("issueType")} />
+                  <div>
+                    <label style={S.lbl}>ประเภทปัญหา <span style={{ color: "#ef4444" }}>*</span> <span style={{ color: "#64748b", fontSize: 11 }}>(เลือกได้มากกว่า 1)</span></label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+                      {issueTypesFor(form.productType).map(t => {
+                        const checked = form.issueTypes.includes(t);
+                        return (
+                          <button key={t} onClick={() => toggleIssueType(t)}
+                            style={{ ...S.btn, textAlign: "left", padding: "10px 12px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: checked ? "#6366f120" : "#0f1117", color: checked ? "#fff" : "#94a3b8", border: "1.5px solid " + (checked ? "#6366f1" : "#2d3148") }}>
+                            <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#6366f1" : "transparent", border: "1.5px solid " + (checked ? "#6366f1" : "#475569"), color: "#fff", fontSize: 12 }}>{checked ? "✓" : ""}</span>
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <TField label="รายละเอียดปัญหา" placeholder="ระบุรายละเอียดเพิ่มเติม" value={form.issueDetail} onChange={setF("issueDetail")} />
                 </div>
               </Card>
@@ -731,7 +848,7 @@ export default function App() {
                 <div style={{ fontSize: 13, color: "#6366f1" }}>สัปดาห์ยาง / Serial: {form.tireWeek || "-"}</div>
               </div>
 
-              <KVList title="ปัญหา" items={[["ประเภทปัญหา", form.issueType], ["รายละเอียด", form.issueDetail || "-"]]} />
+              <KVList title="ปัญหา" items={[["ประเภทปัญหา", form.issueTypes.join(", ") || "-"], ["รายละเอียด", form.issueDetail || "-"]]} />
               <KVList title="ร้านค้า" items={[
                 ["ร้านค้า", form.shopName], ["ประเภทร้าน", form.shopTier], ["ร้านตัวแทน", form.distributorName || "-"],
                 ["จังหวัด", form.province], ["วันรับเคลม", form.claimDate || "-"], ["เลขที่ใบเคลม", form.claimRefNo || "-"],
@@ -769,7 +886,7 @@ export default function App() {
               <div className="list-filter-grid">
                 <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>ค้นหา</label><input style={S.inp} placeholder="รุ่นยาง, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} /></div>
                 <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>แบรนด์</label><select style={S.inp} value={fBrand} onChange={e => setFBrand(e.target.value)}><option>ทั้งหมด</option>{BRANDS.map(b => <option key={b}>{b}</option>)}</select></div>
-                <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>ปัญหา</label><select style={S.inp} value={fIssue} onChange={e => setFIssue(e.target.value)}><option>ทั้งหมด</option>{ISSUE_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
+                <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>ปัญหา</label><select style={S.inp} value={fIssue} onChange={e => setFIssue(e.target.value)}><option>ทั้งหมด</option>{ALL_ISSUE_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
                 <div><label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>สินค้า</label><select style={S.inp} value={fProd} onChange={e => setFProd(e.target.value)}><option>ทั้งหมด</option>{PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
               </div>
             </Card>
@@ -786,13 +903,13 @@ export default function App() {
                   {filtered.length === 0
                     ? <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
                     : filtered.map((issue, i) => (
-                      <tr key={issue.id} className="rh" onClick={() => setSel(issue)} style={{ borderBottom: "1px solid #1e2235", background: i % 2 === 0 ? "transparent" : "#14161f" }}>
+                      <tr key={issue.id} className="rh" onClick={() => openDetail(issue)} style={{ borderBottom: "1px solid #1e2235", background: i % 2 === 0 ? "transparent" : "#14161f" }}>
                         <td style={{ padding: "12px 14px", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap" }}>{issue.caseNo}</td>
                         <td style={{ padding: "12px 14px", color: "#94a3b8", whiteSpace: "nowrap" }}>{issue.date}</td>
                         <td style={{ padding: "12px 14px" }}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
                         <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.productType}</td>
                         <td style={{ padding: "12px 14px" }}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
-                        <td style={{ padding: "12px 14px", color: "#e2e8f0" }}>{issue.issueType}</td>
+                        <td style={{ padding: "12px 14px", color: "#e2e8f0", fontSize: 12 }}>{(issue.issueTypes || []).join(", ")}</td>
                         <td className="hide-mobile" style={{ padding: "12px 14px" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
                         <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.province}</td>
                         <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.reporterName}</td>
@@ -831,7 +948,7 @@ export default function App() {
                 </div>
               </div>
 
-              <KVList title="ปัญหา" items={[["ประเภทปัญหา", sel.issueType], ["รายละเอียดปัญหา", sel.issueDetail || "-"]]} />
+              <KVList title="ปัญหา" items={[["ประเภทปัญหา", (sel.issueTypes || []).join(", ") || "-"], ["รายละเอียดปัญหา", sel.issueDetail || "-"]]} />
               <KVList title="ร้านค้า" items={[
                 ["เลขที่ใบเคลม", sel.claimRefNo || "-"], ["ประเภทยางเคลม", sel.claimType || "-"], ["ชื่อร้าน", sel.shopName],
                 ["ประเภทร้าน", sel.shopTier], ["ร้านตัวแทน", sel.distributorName || "-"], ["จังหวัดที่พบปัญหา", sel.province],
@@ -839,6 +956,9 @@ export default function App() {
               ]} />
               <KVList title="ผู้รายงาน" items={[["ชื่อ", sel.reporterName]]} />
 
+              {!sel.imagesLoaded && (
+                <Card><div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: "8px 0" }}>📷 กำลังโหลดภาพถ่าย...</div></Card>
+              )}
               {(sel.images || []).filter(i => i.url).length > 0 && (
                 <Card>
                   <div style={{ fontWeight: 700, color: "#6366f1", fontSize: 13, marginBottom: 12 }}>ภาพถ่าย ({sel.images.filter(i => i.url).length} รูป)</div>

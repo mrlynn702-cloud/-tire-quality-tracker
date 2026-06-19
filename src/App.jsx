@@ -93,7 +93,6 @@ const CSS = `
   .toast { animation: si 0.3s ease; position: fixed; top: 20px; right: 20px; z-index: 9999; color: #fff; padding: 12px 20px; border-radius: 10px; font-weight: 600; font-size: 14px; }
   .toast-ok { background: #22c55e; }
   .toast-err { background: #ef4444; }
-  .logo-icon { background: linear-gradient(135deg, #e63946, #1d4ed8); }
   .bar-purple { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
   .bar-orange { background: linear-gradient(90deg, #e63946, #f59e0b); }
   .btn-indigo { background: linear-gradient(135deg, #6366f1, #8b5cf6) !important; }
@@ -320,12 +319,15 @@ function buildPdfHtml(issue) {
     + '</div><div style="height:56px"></div>'
     + '<div class="noprint" style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:13px;text-align:center;">เมื่อหน้าพิมพ์เปิดขึ้น เลือก "ปลายทาง / Destination" เป็น <b>Save as PDF</b> แล้วกด Save เพื่อบันทึกไฟล์ลงเครื่อง</div>';
 
-  const header = '<div class="hdr"><div>'
+  const logoUrl = window.location.origin + "/deestone-logo.png";
+  const header = '<div class="hdr"><div style="display:flex;align-items:center;gap:14px;">'
+    + '<img src="' + logoUrl + '" alt="Deestone" style="height:28px;width:auto;background:#fff;border-radius:4px;padding:3px 6px;" />'
+    + '<div>'
     + '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">รายงานปัญหาคุณภาพยาง</div>'
     + '<div class="cn">' + issue.caseNo + '</div><br/>'
     + '<span class="bb" style="background:' + bColor + '25;color:' + bColor + ';border:1px solid ' + bColor + '">' + issue.brand + '</span>'
     + ' <span style="font-size:12px;color:#94a3b8;">' + issue.productType + '</span>'
-    + '</div><div style="text-align:right;">'
+    + '</div></div><div style="text-align:right;">'
     + '<div style="font-size:11px;color:#94a3b8;">วันที่พบปัญหา</div>'
     + '<div style="font-size:18px;font-weight:700;color:#fff;">' + issue.date + '</div>'
     + (issue.claimDate ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">วันรับเคลม: ' + issue.claimDate + '</div>' : '')
@@ -626,7 +628,7 @@ export default function App() {
       {loading && (
         <div className="loading-overlay">
           <div style={{ textAlign: "center", color: "#94a3b8" }}>
-            <div style={{ fontSize: 40, marginBottom: 16 }}>🔧</div>
+            <img src="/deestone-logo.png" alt="Deestone" style={{ width: 160, marginBottom: 16 }} />
             <div style={{ fontSize: 16 }}>กำลังโหลดข้อมูล...</div>
           </div>
         </div>
@@ -637,7 +639,7 @@ export default function App() {
       <div style={S.hdr}>
         <div className="header-inner" style={S.hdrIn}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div className="logo-icon" style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔧</div>
+            <img src="/deestone-logo.png" alt="Deestone" style={{ height: 30, width: "auto" }} />
             <div>
               <div style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9" }}>Tire Quality Tracker</div>
               <div style={{ fontSize: 11, color: "#64748b" }}>Deestone &amp; Bluhorse</div>
@@ -963,7 +965,7 @@ export default function App() {
             <div className="detail-grid">
               <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  <div className="logo-icon" style={{ width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🔧</div>
+                  <img src="/deestone-logo.png" alt="Deestone" style={{ height: 40, width: "auto" }} />
                   <div>
                     <div style={{ fontSize: 12, color: "#6366f1", fontWeight: 700, marginBottom: 4 }}>{sel.caseNo}</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9" }}>{sel.tireModel} {sel.tireSize}</div>

@@ -403,6 +403,7 @@ export default function App() {
   const [fProd, setFProd] = useState("ทั้งหมด");
   const [fMonth, setFMonth] = useState("ทั้งปี");
   const [sel, setSel] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
 
@@ -505,6 +506,18 @@ export default function App() {
     }
   };
 
+  const deleteMany = async (ids) => {
+    if (ids.length === 0) return;
+    if (!window.confirm("ยืนยันลบ " + ids.length + " รายการ? การลบไม่สามารถย้อนกลับได้")) return;
+    showToast("กำลังลบข้อมูล...");
+    const results = await Promise.allSettled(ids.map(id => sbDelete(id)));
+    const okIds = ids.filter((id, i) => results[i].status === "fulfilled");
+    setIssues(p => p.filter(i => !okIds.includes(i.id)));
+    setSelectedIds(new Set());
+    if (okIds.length === ids.length) showToast("ลบ " + okIds.length + " รายการสำเร็จ");
+    else showToast("ลบสำเร็จ " + okIds.length + " จาก " + ids.length + " รายการ", okIds.length === 0 ? "err" : "ok");
+  };
+
   const filtered = useMemo(() => issues.filter(i => {
     const q = search.toLowerCase();
     return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
@@ -593,7 +606,7 @@ export default function App() {
     return Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
   }, [filtered]);
 
-  const navGo = (v) => { setView(v); setSel(null); setPreviewMode(false); };
+  const navGo = (v) => { setView(v); setSel(null); setPreviewMode(false); setSelectedIds(new Set()); };
 
   const openDetail = (issue) => {
     setSel(issue);
@@ -875,12 +888,17 @@ export default function App() {
         {/* LIST */}
         {view === "list" && !sel && (
           <div className="fu">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
               <div>
                 <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>รายการปัญหาทั้งหมด</h2>
-                <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {filtered.length} รายการ</p>
+                <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {filtered.length} รายการ{selectedIds.size > 0 ? " • เลือกอยู่ " + selectedIds.size + " รายการ" : ""}</p>
               </div>
-              <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export CSV</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                {selectedIds.size > 0 && (
+                  <button onClick={() => deleteMany([...selectedIds])} style={{ ...S.btn, background: "#ef4444", color: "#fff", padding: "10px 16px" }}>🗑️ ลบ {selectedIds.size} รายการ</button>
+                )}
+                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export CSV</button>
+              </div>
             </div>
             <Card style={{ marginBottom: 16 }}>
               <div className="list-filter-grid">
@@ -894,6 +912,11 @@ export default function App() {
               <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "#1e2235", borderBottom: "1px solid #2d3148" }}>
+                    <th style={{ padding: "12px 10px", width: 36 }}>
+                      <input type="checkbox" style={{ width: 16, height: 16, cursor: "pointer" }}
+                        checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                        onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(i => i.id)) : new Set())} />
+                    </th>
                     {[["เลขเคส", false], ["วันที่", false], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
                       <th key={h} className={hide ? "hide-mobile" : ""} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
@@ -901,18 +924,26 @@ export default function App() {
                 </thead>
                 <tbody>
                   {filtered.length === 0
-                    ? <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
+                    ? <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
                     : filtered.map((issue, i) => (
-                      <tr key={issue.id} className="rh" onClick={() => openDetail(issue)} style={{ borderBottom: "1px solid #1e2235", background: i % 2 === 0 ? "transparent" : "#14161f" }}>
-                        <td style={{ padding: "12px 14px", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap" }}>{issue.caseNo}</td>
-                        <td style={{ padding: "12px 14px", color: "#94a3b8", whiteSpace: "nowrap" }}>{issue.date}</td>
-                        <td style={{ padding: "12px 14px" }}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
-                        <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.productType}</td>
-                        <td style={{ padding: "12px 14px" }}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
-                        <td style={{ padding: "12px 14px", color: "#e2e8f0", fontSize: 12 }}>{(issue.issueTypes || []).join(", ")}</td>
-                        <td className="hide-mobile" style={{ padding: "12px 14px" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
-                        <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.province}</td>
-                        <td className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8" }}>{issue.reporterName}</td>
+                      <tr key={issue.id} className="rh" style={{ borderBottom: "1px solid #1e2235", background: selectedIds.has(issue.id) ? "#6366f115" : (i % 2 === 0 ? "transparent" : "#14161f") }}>
+                        <td style={{ padding: "12px 10px" }} onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" style={{ width: 16, height: 16, cursor: "pointer" }} checked={selectedIds.has(issue.id)}
+                            onChange={e => setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(issue.id); else next.delete(issue.id);
+                              return next;
+                            })} />
+                        </td>
+                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer" }}>{issue.caseNo}</td>
+                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#94a3b8", whiteSpace: "nowrap", cursor: "pointer" }}>{issue.date}</td>
+                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", cursor: "pointer" }}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
+                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.productType}</td>
+                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", cursor: "pointer" }}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
+                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#e2e8f0", fontSize: 12, cursor: "pointer" }}>{(issue.issueTypes || []).join(", ")}</td>
+                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", cursor: "pointer" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
+                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.province}</td>
+                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.reporterName}</td>
                       </tr>
                     ))}
                 </tbody>

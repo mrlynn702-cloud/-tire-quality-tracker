@@ -584,7 +584,6 @@ export default function App() {
 
   const exportPDF = async (issue) => {
     // เปิดหน้าต่างทันทีตอนคลิก (ก่อน await) ไม่งั้นบางเบราว์เซอร์ (มือถือ) จะบล็อก popup
-    // หรือทำให้รูปภาพในหน้าต่างใหม่โหลดไม่ขึ้น
     const win = window.open("", "_blank");
     if (win) {
       win.document.write('<!DOCTYPE html><html><body style="background:#0f1117;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div>กำลังเตรียมเอกสาร...</div></body></html>');
@@ -598,9 +597,11 @@ export default function App() {
       setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
     } catch {}
     if (win && !win.closed) {
-      win.document.open();
-      win.document.write(buildPdfHtml(finalIssue));
-      win.document.close();
+      // ใช้ Blob URL แทน document.write ตรงๆ เพราะ document.write ทำให้หน้าต่างใหม่มี origin เป็น
+      // "null" ซึ่งบางครั้งทำให้รูปภาพ (cross-origin) โหลดไม่ขึ้น Blob URL จะมี origin ที่ถูกต้อง
+      const blob = new Blob([buildPdfHtml(finalIssue)], { type: "text/html" });
+      const blobUrl = URL.createObjectURL(blob);
+      win.location.href = blobUrl;
     } else {
       showToast("เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง", "err");
     }

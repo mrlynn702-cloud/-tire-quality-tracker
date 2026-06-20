@@ -37,6 +37,24 @@ const sbFetchImages = async (id) => {
   return (data[0] && data[0].images) || [];
 };
 
+// แปลงรูปจาก URL เป็น base64 data URI เพื่อฝังลงใน PDF โดยตรง
+// (กันปัญหารูปไม่แสดงในหน้าต่าง PDF เพราะ CORS / origin ของ Blob URL)
+const imageUrlToDataUri = async (url) => {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return url;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(url);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
+};
+
 const sbDelete = async (id) => {
   const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, { method: "DELETE", headers: sbHeaders() });
   if (!res.ok) throw new Error(await res.text());
@@ -593,19 +611,21 @@ export default function App() {
       win.document.write('<!DOCTYPE html><html><body style="background:#0f1117;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div>กำลังเตรียมเอกสาร...</div></body></html>');
       win.document.close();
     }
-    // ดึงรูปล่าสุดจาก Storage ใหม่เสมอ (ไม่พึ่งค่า cache ใน state) เพื่อให้ PDF มีรูปแน่นอน
+    // ดึงรูปล่าสุดจาก Storage แล้วแปลงเป็น base64 ฝังตรงใน PDF
+    // (รูปจะแสดงแน่นอนเพราะไม่ต้องโหลดข้ามเครือข่าย/ไม่ติด CORS ในหน้าต่าง PDF)
     let finalIssue = issue;
     try {
       const images = await sbFetchImages(issue.id);
-      finalIssue = { ...issue, images, imagesLoaded: true };
-      setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
+      const embedded = await Promise.all((images || []).map(async (img) => ({
+        ...img,
+        url: img.url ? await imageUrlToDataUri(img.url) : img.url,
+      })));
+      finalIssue = { ...issue, images: embedded, imagesLoaded: true };
     } catch {}
     if (win && !win.closed) {
-      // ใช้ Blob URL แทน document.write ตรงๆ เพราะ document.write ทำให้หน้าต่างใหม่มี origin เป็น
-      // "null" ซึ่งบางครั้งทำให้รูปภาพ (cross-origin) โหลดไม่ขึ้น Blob URL จะมี origin ที่ถูกต้อง
-      const blob = new Blob([buildPdfHtml(finalIssue)], { type: "text/html" });
-      const blobUrl = URL.createObjectURL(blob);
-      win.location.href = blobUrl;
+      win.document.open();
+      win.document.write(buildPdfHtml(finalIssue));
+      win.document.close();
     } else {
       showToast("เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง", "err");
     }

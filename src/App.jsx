@@ -322,7 +322,7 @@ function buildPdfHtml(issue) {
   const basicSection = '<div class="sec"><div class="sech">ข้อมูลพื้นฐาน</div><table>'
     + row("แบรนด์", issue.brand)
     + row("ประเภทสินค้า", issue.productType)
-    + row("วันที่พบปัญหา", issue.date)
+    + row("วันที่รับยางเคลม", issue.claimDate)
     + row("รุ่นยาง", issue.tireModel)
     + row("ขนาดยาง", issue.tireSize)
     + row("สัปดาห์ยาง / Serial", issue.tireWeek)
@@ -340,7 +340,7 @@ function buildPdfHtml(issue) {
     + row("ประเภทร้าน", issue.shopTier)
     + row("ร้านตัวแทนที่รับมา", issue.distributorName)
     + row("จังหวัดที่พบปัญหา", issue.province)
-    + row("วันที่รับยางเคลม", issue.claimDate)
+    + row("วันที่พบปัญหา", issue.date)
     + row("ผู้รายงาน", issue.reporterName)
     + '</table></div>';
 
@@ -841,13 +841,13 @@ export default function App() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <KVList title="ข้อมูลพื้นฐาน" items={[
-                ["แบรนด์", form.brand], ["ประเภทสินค้า", form.productType], ["วันที่พบปัญหา", form.date],
+                ["แบรนด์", form.brand], ["ประเภทสินค้า", form.productType], ["วันที่รับยางเคลม", form.claimDate || "-"],
                 ["รุ่นยาง", form.tireModel || "-"], ["ขนาดยาง", form.tireSize || "-"], ["สัปดาห์ยาง / Serial", form.tireWeek || "-"],
               ]} />
               <KVList title="ปัญหา" items={[["ประเภทปัญหา", form.issueTypes.join(", ") || "-"], ["รายละเอียด", form.issueDetail || "-"]]} />
               <KVList title="ร้านค้า" items={[
                 ["ร้านค้า", form.shopName], ["ประเภทร้าน", form.shopTier], ["ร้านตัวแทน", form.distributorName || "-"],
-                ["จังหวัด", form.province], ["วันรับเคลม", form.claimDate || "-"], ["เลขที่ใบเคลม", form.claimRefNo || "-"],
+                ["จังหวัด", form.province], ["วันที่พบปัญหา", form.date || "-"], ["เลขที่ใบเคลม", form.claimRefNo || "-"],
                 ["ประเภทยางเคลม", form.claimType], ["ผู้รายงาน", form.reporterName],
               ]} />
 
@@ -950,14 +950,14 @@ export default function App() {
               </div>
 
               <KVList title="ข้อมูลพื้นฐาน" items={[
-                ["แบรนด์", sel.brand], ["ประเภทสินค้า", sel.productType], ["วันที่พบปัญหา", sel.date],
+                ["แบรนด์", sel.brand], ["ประเภทสินค้า", sel.productType], ["วันที่รับยางเคลม", sel.claimDate || "-"],
                 ["รุ่นยาง", sel.tireModel || "-"], ["ขนาดยาง", sel.tireSize || "-"], ["สัปดาห์ยาง / Serial", sel.tireWeek || "-"],
               ]} />
               <KVList title="ปัญหา" items={[["ประเภทปัญหา", (sel.issueTypes || []).join(", ") || "-"], ["รายละเอียดปัญหา", sel.issueDetail || "-"]]} />
               <KVList title="ร้านค้า" items={[
                 ["เลขที่ใบเคลม", sel.claimRefNo || "-"], ["ประเภทยางเคลม", sel.claimType || "-"], ["ชื่อร้าน", sel.shopName],
                 ["ประเภทร้าน", sel.shopTier], ["ร้านตัวแทน", sel.distributorName || "-"], ["จังหวัดที่พบปัญหา", sel.province],
-                ["วันที่รับยางเคลม", sel.claimDate || "-"],
+                ["วันที่พบปัญหา", sel.date || "-"],
               ]} />
               <KVList title="ผู้รายงาน" items={[["ชื่อ", sel.reporterName]]} />
 

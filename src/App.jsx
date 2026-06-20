@@ -583,16 +583,28 @@ export default function App() {
   };
 
   const exportPDF = async (issue) => {
+    // เปิดหน้าต่างทันทีตอนคลิก (ก่อน await) ไม่งั้นบางเบราว์เซอร์ (มือถือ) จะบล็อก popup
+    // หรือทำให้รูปภาพในหน้าต่างใหม่โหลดไม่ขึ้น
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.write('<!DOCTYPE html><html><body style="background:#0f1117;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div>กำลังเตรียมเอกสาร...</div></body></html>');
+      win.document.close();
+    }
     let finalIssue = issue;
     if (!issue.imagesLoaded) {
       try {
         const images = await sbFetchImages(issue.id);
         finalIssue = { ...issue, images, imagesLoaded: true };
+        setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
       } catch {}
     }
-    const win = window.open("", "_blank");
-    win.document.write(buildPdfHtml(finalIssue));
-    win.document.close();
+    if (win && !win.closed) {
+      win.document.open();
+      win.document.write(buildPdfHtml(finalIssue));
+      win.document.close();
+    } else {
+      showToast("เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง", "err");
+    }
   };
 
   const total = issues.length;

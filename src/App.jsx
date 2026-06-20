@@ -339,6 +339,15 @@ function buildPdfHtml(issue) {
     + '<div class="tc"><div class="tclbl">สัปดาห์ยาง/Serial</div><div class="tcval">' + (issue.tireWeek || "-") + '</div></div>'
     + '</div>';
 
+  const basicSection = '<div class="sec"><div class="sech">ข้อมูลพื้นฐาน</div><table>'
+    + row("แบรนด์", issue.brand)
+    + row("ประเภทสินค้า", issue.productType)
+    + row("วันที่พบปัญหา", issue.date)
+    + row("รุ่นยาง", issue.tireModel)
+    + row("ขนาดยาง", issue.tireSize)
+    + row("สัปดาห์ยาง / Serial", issue.tireWeek)
+    + '</table></div>';
+
   const issueSection = '<div class="sec"><div class="sech">ข้อมูลปัญหา</div><table>'
     + row("ประเภทปัญหา", (issue.issueTypes || []).join(", "))
     + row("รายละเอียดปัญหา", issue.issueDetail)
@@ -362,7 +371,7 @@ function buildPdfHtml(issue) {
     + '<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>';
 
   return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + issue.caseNo + '</title>' + styleTag + '</head><body>'
-    + toolbar + header + highlight + issueSection + shopSection + imagesSection + footer + '</body></html>';
+    + toolbar + header + highlight + basicSection + issueSection + shopSection + imagesSection + footer + '</body></html>';
 }
 
 // บีบอัดรูปก่อนเก็บ: ย่อด้านยาวสุดไม่เกิน 1600px และลดคุณภาพ JPEG เหลือ 80%
@@ -851,18 +860,10 @@ export default function App() {
               <h2 style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9" }}>Preview ก่อนบันทึก</h2>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ ...S.card, borderLeft: "4px solid #6366f1" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Badge bg={BC[form.brand] + "25"} color={BC[form.brand]}>{form.brand}</Badge>
-                    <Badge bg="#2d3148" color="#94a3b8">{form.productType}</Badge>
-                  </div>
-                  <span style={{ fontSize: 13, color: "#64748b" }}>{form.date}</span>
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9", marginBottom: 4 }}>{form.tireModel} {form.tireSize}</div>
-                <div style={{ fontSize: 13, color: "#6366f1" }}>สัปดาห์ยาง / Serial: {form.tireWeek || "-"}</div>
-              </div>
-
+              <KVList title="ข้อมูลพื้นฐาน" items={[
+                ["แบรนด์", form.brand], ["ประเภทสินค้า", form.productType], ["วันที่พบปัญหา", form.date],
+                ["รุ่นยาง", form.tireModel || "-"], ["ขนาดยาง", form.tireSize || "-"], ["สัปดาห์ยาง / Serial", form.tireWeek || "-"],
+              ]} />
               <KVList title="ปัญหา" items={[["ประเภทปัญหา", form.issueTypes.join(", ") || "-"], ["รายละเอียด", form.issueDetail || "-"]]} />
               <KVList title="ร้านค้า" items={[
                 ["ร้านค้า", form.shopName], ["ประเภทร้าน", form.shopTier], ["ร้านตัวแทน", form.distributorName || "-"],
@@ -981,6 +982,10 @@ export default function App() {
                 </div>
               </div>
 
+              <KVList title="ข้อมูลพื้นฐาน" items={[
+                ["แบรนด์", sel.brand], ["ประเภทสินค้า", sel.productType], ["วันที่พบปัญหา", sel.date],
+                ["รุ่นยาง", sel.tireModel || "-"], ["ขนาดยาง", sel.tireSize || "-"], ["สัปดาห์ยาง / Serial", sel.tireWeek || "-"],
+              ]} />
               <KVList title="ปัญหา" items={[["ประเภทปัญหา", (sel.issueTypes || []).join(", ") || "-"], ["รายละเอียดปัญหา", sel.issueDetail || "-"]]} />
               <KVList title="ร้านค้า" items={[
                 ["เลขที่ใบเคลม", sel.claimRefNo || "-"], ["ประเภทยางเคลม", sel.claimType || "-"], ["ชื่อร้าน", sel.shopName],

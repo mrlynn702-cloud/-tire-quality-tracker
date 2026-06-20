@@ -396,7 +396,6 @@ export default function App() {
   const [view, setView] = useState("form");
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [caseCounter, setCaseCounter] = useState(1);
   const [form, setForm] = useState(initForm());
   const [previewMode, setPreviewMode] = useState(false);
   const [search, setSearch] = useState("");
@@ -428,7 +427,6 @@ export default function App() {
         distributorName: r.distributor_name, province: r.province, images: [], imagesLoaded: false,
       }));
       setIssues(mapped);
-      if (mapped.length > 0) setCaseCounter(mapped.length + 1);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -466,7 +464,10 @@ export default function App() {
     const yy = now.getFullYear().toString().slice(-2);
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     const dd = String(now.getDate()).padStart(2, "0");
-    const caseNo = "C" + yy + mm + dd + String(caseCounter).padStart(3, "0");
+    // นับเลขเคสใหม่เป็น 001 ทุกต้นเดือน: หาจำนวนเคสที่มีเลขเคสขึ้นต้นด้วยปี+เดือนเดียวกัน (C + YYMM)
+    const monthPrefix = "C" + yy + mm;
+    const countThisMonth = issues.filter(i => (i.caseNo || "").startsWith(monthPrefix)).length;
+    const caseNo = monthPrefix + dd + String(countThisMonth + 1).padStart(3, "0");
     showToast("กำลังอัปโหลดรูป...");
     try {
       const uploadedImages = await Promise.all(form.images.map(async (img) => {
@@ -486,7 +487,6 @@ export default function App() {
       };
       const [saved] = await sbFetch("POST", payload);
       setIssues(p => [{ ...form, id: saved.id, caseNo, images: uploadedImages }, ...p]);
-      setCaseCounter(c => c + 1);
       setForm(initForm());
       setPreviewMode(false);
       showToast("บันทึกสำเร็จ");

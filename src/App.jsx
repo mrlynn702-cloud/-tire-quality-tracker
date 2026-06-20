@@ -84,6 +84,7 @@ function initForm() {
 
 const CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overflow-x: hidden; max-width: 100%; }
   input, select, textarea, button { font-family: inherit; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: #6366f1; }
   .rh:hover { background: #1e2235 !important; cursor: pointer; }
@@ -107,7 +108,8 @@ const CSS = `
   .filter-row input, .filter-row select { width: auto; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .list-filter-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; }
-  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-width: 0; }
+  .detail-grid > * { min-width: 0; }
   .hide-mobile { display: table-cell; }
   .nav-label-full { display: inline; }
   .nav-label-short { display: none; }
@@ -210,9 +212,9 @@ const KVList = ({ title, items }) => (
   <Card>
     <div style={{ fontWeight: 700, color: "#6366f1", fontSize: 13, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>{title}</div>
     {items.map(([k, v]) => (
-      <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e2235", fontSize: 14 }}>
-        <span style={{ color: "#64748b" }}>{k}</span>
-        <span style={{ color: "#e2e8f0", fontWeight: 500, textAlign: "right", maxWidth: "60%" }}>{v}</span>
+      <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 0", borderBottom: "1px solid #1e2235", fontSize: 14 }}>
+        <span style={{ color: "#64748b", flexShrink: 0 }}>{k}</span>
+        <span style={{ color: "#e2e8f0", fontWeight: 500, textAlign: "right", minWidth: 0, wordBreak: "break-word", overflowWrap: "anywhere" }}>{v}</span>
       </div>
     ))}
   </Card>

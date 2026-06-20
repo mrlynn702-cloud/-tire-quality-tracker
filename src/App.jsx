@@ -393,7 +393,7 @@ const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) =
 
 // ---------- App ----------
 export default function App() {
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState("form");
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [caseCounter, setCaseCounter] = useState(1);
@@ -646,7 +646,7 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {[["dashboard", "📊", "Dashboard"], ["form", "➕", "บันทึก"], ["list", "📋", "รายการ"]].map(([v, icon, l]) => (
+            {[["form", "➕", "บันทึก"], ["dashboard", "📊", "Dashboard"], ["list", "📋", "รายการ"]].map(([v, icon, l]) => (
               <button key={v} onClick={() => navGo(v)}
                 style={{ ...S.btn, padding: "9px 14px", background: view === v ? "#6366f1" : "transparent", color: view === v ? "#fff" : "#94a3b8", border: view === v ? "none" : "1px solid #2d3148" }}>
                 <span className="nav-label-short">{icon}</span>

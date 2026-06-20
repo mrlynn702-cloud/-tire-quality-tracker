@@ -289,8 +289,8 @@ const BarChart = ({ title, items, color }) => {
 // ---------- PDF builder ----------
 function buildPdfHtml(issue) {
   const row = (lbl, val) => '<tr><td style="padding:8px 12px;color:#64748b;font-size:13px;width:40%;border-bottom:1px solid #f1f5f9;">' + lbl + '</td><td style="padding:8px 12px;font-size:13px;font-weight:500;border-bottom:1px solid #f1f5f9;">' + (val || "-") + '</td></tr>';
-  const imgHTML = (issue.images || []).filter(i => i.url).map(img =>
-    '<img src="' + img.url + '" style="width:90px;height:68px;object-fit:cover;border-radius:5px;border:1px solid #ddd;" />'
+  const imgHTML = (issue.images || []).filter(i => i.url).slice(0, 8).map(img =>
+    '<img src="' + img.url + '" style="width:100%;height:120px;object-fit:cover;border-radius:5px;border:1px solid #ddd;" />'
   ).join("");
 
   const styleTag = '<style>'
@@ -303,8 +303,7 @@ function buildPdfHtml(issue) {
     + '.sech{background:#f8fafc;padding:5px 10px;font-size:10px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0}'
     + 'table{width:100%;border-collapse:collapse}'
     + 'td{padding:4px 10px!important;font-size:11px!important;border-bottom:1px solid #f1f5f9}'
-    + '.imgs{display:flex;flex-wrap:wrap;gap:6px;padding:8px}'
-    + '.imgs img{width:90px!important;height:68px!important;}'
+    + '.imgs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px}'
     + '.ftr{margin-top:10px;text-align:center;font-size:9px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}'
     + '@media print{.noprint{display:none!important}body{padding:0}}'
     + '</style>';

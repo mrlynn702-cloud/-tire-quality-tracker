@@ -113,7 +113,7 @@ const CSS = `
   .hide-mobile { display: table-cell; }
   .nav-label-full { display: inline; }
   .nav-label-short { display: none; }
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
 
   @media (max-width: 720px) {
     .wrap { padding: 14px; }
@@ -132,12 +132,14 @@ const CSS = `
     h2.page-title { font-size: 19px !important; }
     .stat-value { font-size: 24px !important; }
     .stat-card-pad { padding: 14px !important; }
+    .detail-logo { height: 40px !important; }
+    .detail-caseno { font-size: 20px !important; }
   }
 `;
 
 const S = {
   page: { minHeight: "100vh", background: "#0f1117", color: "#e2e8f0" },
-  card: { background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 12, padding: 20 },
+  card: { background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 12, padding: 20, maxWidth: "100%", overflow: "hidden" },
   inp: { background: "#0f1117", border: "1px solid #2d3148", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", width: "100%", fontSize: 14 },
   btn: { cursor: "pointer", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600 },
   lbl: { fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 6 },
@@ -969,9 +971,9 @@ export default function App() {
               <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ลบข้อมูล</button>
             </div>
             <div className="detail-grid">
-              <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 20 }}>
-                <img src="/deestone-logo.png" alt="Deestone" style={{ height: 64, width: "auto" }} />
-                <div style={{ fontSize: 30, fontWeight: 800, color: "#f1f5f9", letterSpacing: 0.5 }}>{sel.caseNo}</div>
+              <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, minWidth: 0, maxWidth: "100%", flexWrap: "wrap", overflow: "hidden" }}>
+                <img src="/deestone-logo.png" alt="Deestone" className="detail-logo" style={{ height: 64, width: "auto", flexShrink: 0, maxWidth: "100%" }} />
+                <div className="detail-caseno" style={{ fontSize: 30, fontWeight: 800, color: "#f1f5f9", letterSpacing: 0.5, minWidth: 0, maxWidth: "100%", wordBreak: "break-all", overflowWrap: "anywhere" }}>{sel.caseNo}</div>
               </div>
 
               <KVList title="ข้อมูลพื้นฐาน" items={[

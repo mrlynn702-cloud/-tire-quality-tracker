@@ -288,7 +288,6 @@ const BarChart = ({ title, items, color }) => {
 
 // ---------- PDF builder ----------
 function buildPdfHtml(issue) {
-  const bColor = BC[issue.brand] || "#6366f1";
   const row = (lbl, val) => '<tr><td style="padding:8px 12px;color:#64748b;font-size:13px;width:40%;border-bottom:1px solid #f1f5f9;">' + lbl + '</td><td style="padding:8px 12px;font-size:13px;font-weight:500;border-bottom:1px solid #f1f5f9;">' + (val || "-") + '</td></tr>';
   const imgHTML = (issue.images || []).filter(i => i.url).map(img =>
     '<img src="' + img.url + '" style="width:160px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #ddd;" />'
@@ -296,14 +295,7 @@ function buildPdfHtml(issue) {
 
   const styleTag = '<style>'
     + 'body{font-family:sans-serif;margin:0;padding:32px;color:#1e293b}'
-    + '.hdr{background:#1a1d27;color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start}'
-    + '.cn{display:inline-block;padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;margin-bottom:8px}'
-    + '.bb{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700}'
-    + '.hl{border:2px solid ' + bColor + ';border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex}'
-    + '.tc{flex:1;text-align:center;padding:8px 12px;border-right:1px solid #e2e8f0}'
-    + '.tc:last-child{border-right:none}'
-    + '.tclbl{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}'
-    + '.tcval{font-size:20px;font-weight:800;color:#1e293b}'
+    + '.hdr{background:#1a1d27;color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:16px}'
     + '.sec{margin-bottom:20px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}'
     + '.sech{background:#f8fafc;padding:10px 14px;font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #e2e8f0}'
     + 'table{width:100%;border-collapse:collapse}'
@@ -320,24 +312,12 @@ function buildPdfHtml(issue) {
     + '<div class="noprint" style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:13px;text-align:center;">เมื่อหน้าพิมพ์เปิดขึ้น เลือก "ปลายทาง / Destination" เป็น <b>Save as PDF</b> แล้วกด Save เพื่อบันทึกไฟล์ลงเครื่อง</div>';
 
   const logoUrl = window.location.origin + "/deestone-logo.png";
-  const header = '<div class="hdr"><div style="display:flex;align-items:center;gap:14px;">'
-    + '<img src="' + logoUrl + '" alt="Deestone" style="height:28px;width:auto;background:#fff;border-radius:4px;padding:3px 6px;" />'
+  const header = '<div class="hdr" style="display:flex;align-items:center;gap:20px;">'
+    + '<img src="' + logoUrl + '" alt="Deestone" style="height:56px;width:auto;background:#fff;border-radius:6px;padding:6px 10px;" />'
     + '<div>'
     + '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">รายงานปัญหาคุณภาพยาง</div>'
-    + '<div class="cn">' + issue.caseNo + '</div><br/>'
-    + '<span class="bb" style="background:' + bColor + '25;color:' + bColor + ';border:1px solid ' + bColor + '">' + issue.brand + '</span>'
-    + ' <span style="font-size:12px;color:#94a3b8;">' + issue.productType + '</span>'
-    + '</div></div><div style="text-align:right;">'
-    + '<div style="font-size:11px;color:#94a3b8;">วันที่พบปัญหา</div>'
-    + '<div style="font-size:18px;font-weight:700;color:#fff;">' + issue.date + '</div>'
-    + (issue.claimDate ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">วันรับเคลม: ' + issue.claimDate + '</div>' : '')
+    + '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + issue.caseNo + '</div>'
     + '</div></div>';
-
-  const highlight = '<div class="hl">'
-    + '<div class="tc"><div class="tclbl">รุ่นยาง</div><div class="tcval" style="color:' + bColor + ';">' + (issue.tireModel || "-") + '</div></div>'
-    + '<div class="tc"><div class="tclbl">ขนาด</div><div class="tcval">' + (issue.tireSize || "-") + '</div></div>'
-    + '<div class="tc"><div class="tclbl">สัปดาห์ยาง/Serial</div><div class="tcval">' + (issue.tireWeek || "-") + '</div></div>'
-    + '</div>';
 
   const basicSection = '<div class="sec"><div class="sech">ข้อมูลพื้นฐาน</div><table>'
     + row("แบรนด์", issue.brand)
@@ -371,7 +351,7 @@ function buildPdfHtml(issue) {
     + '<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>';
 
   return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + issue.caseNo + '</title>' + styleTag + '</head><body>'
-    + toolbar + header + highlight + basicSection + issueSection + shopSection + imagesSection + footer + '</body></html>';
+    + toolbar + header + basicSection + issueSection + shopSection + imagesSection + footer + '</body></html>';
 }
 
 // บีบอัดรูปก่อนเก็บ: ย่อด้านยาวสุดไม่เกิน 1600px และลดคุณภาพ JPEG เหลือ 80%
@@ -964,22 +944,9 @@ export default function App() {
               <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ลบข้อมูล</button>
             </div>
             <div className="detail-grid">
-              <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  <img src="/deestone-logo.png" alt="Deestone" style={{ height: 40, width: "auto" }} />
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6366f1", fontWeight: 700, marginBottom: 4 }}>{sel.caseNo}</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9" }}>{sel.tireModel} {sel.tireSize}</div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                      <Badge bg={BC[sel.brand] + "25"} color={BC[sel.brand]}>{sel.brand}</Badge>
-                      <Badge bg="#2d3148" color="#94a3b8">{sel.productType}</Badge>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", color: "#64748b", fontSize: 13 }}>
-                  <div>{sel.date}</div>
-                  <div style={{ color: "#6366f1" }}>{sel.tireWeek}</div>
-                </div>
+              <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 20 }}>
+                <img src="/deestone-logo.png" alt="Deestone" style={{ height: 64, width: "auto" }} />
+                <div style={{ fontSize: 30, fontWeight: 800, color: "#f1f5f9", letterSpacing: 0.5 }}>{sel.caseNo}</div>
               </div>
 
               <KVList title="ข้อมูลพื้นฐาน" items={[

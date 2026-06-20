@@ -37,24 +37,6 @@ const sbFetchImages = async (id) => {
   return (data[0] && data[0].images) || [];
 };
 
-// แปลงรูปจาก URL เป็น base64 data URI เพื่อฝังลงใน PDF โดยตรง
-// (กันปัญหารูปไม่แสดงในหน้าต่าง PDF เพราะ CORS / origin ของ Blob URL)
-const imageUrlToDataUri = async (url) => {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return url;
-    const blob = await res.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = () => resolve(url);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return url;
-  }
-};
-
 const sbDelete = async (id) => {
   const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, { method: "DELETE", headers: sbHeaders() });
   if (!res.ok) throw new Error(await res.text());
@@ -152,6 +134,16 @@ const CSS = `
     .stat-card-pad { padding: 14px !important; }
     .detail-logo { height: 40px !important; }
     .detail-caseno { font-size: 20px !important; }
+  }
+
+  /* ---- การพิมพ์ PDF ในหน้าเดียวกับแอพ ---- */
+  #print-area { display: none; }
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    body * { visibility: hidden; }
+    #print-area, #print-area * { visibility: visible; }
+    #print-area { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
   }
 `;
 
@@ -308,84 +300,85 @@ const BarChart = ({ title, items, color }) => {
   );
 };
 
-// ---------- PDF builder ----------
-function buildPdfHtml(issue) {
-  const row = (lbl, val) => '<tr><td style="padding:8px 12px;color:#64748b;font-size:13px;width:40%;border-bottom:1px solid #f1f5f9;">' + lbl + '</td><td style="padding:8px 12px;font-size:13px;font-weight:500;border-bottom:1px solid #f1f5f9;">' + (val || "-") + '</td></tr>';
-  const imgHTML = (issue.images || []).filter(i => i.url).slice(0, 8).map(img =>
-    '<img src="' + img.url + '" style="width:100%;height:150px;object-fit:cover;border-radius:6px;border:1px solid #ddd;" />'
-  ).join("");
+// ---------- PDF document (render ในหน้าเดียวกับแอพ แล้วใช้ window.print) ----------
+// ใช้ origin เดียวกับแอพ รูปจึงโหลดได้ปกติ ไม่ติด CORS
+const PD = {
+  page: { fontFamily: "sans-serif", color: "#1e293b", fontSize: 14, padding: 24, background: "#fff" },
+  hdr: { background: "#1a1d27", color: "#fff", padding: "20px 26px", borderRadius: 10, marginBottom: 16, display: "flex", alignItems: "center", gap: 18 },
+  cols: { display: "flex", gap: 18 },
+  col: { flex: 1, minWidth: 0 },
+  sec: { marginBottom: 16, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" },
+  sech: { background: "#f8fafc", padding: "8px 14px", fontSize: 12, fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #e2e8f0" },
+  td1: { padding: "8px 14px", fontSize: 13, color: "#64748b", width: "40%", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" },
+  td2: { padding: "8px 14px", fontSize: 13, fontWeight: 500, borderBottom: "1px solid #f1f5f9", wordBreak: "break-word" },
+  imgs: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, padding: 12 },
+  img: { width: "100%", height: 150, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" },
+  ftr: { marginTop: 18, paddingTop: 18, textAlign: "center", fontSize: 11, color: "#94a3b8", borderTop: "1px solid #e2e8f0" },
+};
 
-  const styleTag = '<style>'
-    + '@page{size:A4;margin:12mm}'
-    + 'html,body{height:100%}'
-    + 'body{font-family:sans-serif;margin:0;padding:24px;color:#1e293b;font-size:14px;display:flex;flex-direction:column;}'
-    + '.hdr{background:#1a1d27;color:#fff;padding:20px 26px;border-radius:10px;margin-bottom:16px}'
-    + '.cols{display:flex;gap:18px}'
-    + '.col{flex:1;min-width:0}'
-    + '.sec{margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}'
-    + '.sech{background:#f8fafc;padding:8px 14px;font-size:12px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0}'
-    + 'table{width:100%;border-collapse:collapse}'
-    + 'td{padding:8px 14px!important;font-size:13px!important;border-bottom:1px solid #f1f5f9}'
-    + '.imgs{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px}'
-    + '.main-content{flex:1}'
-    + '.ftr{margin-top:auto;padding-top:18px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;}'
-    + '@media print{.noprint{display:none!important}body{padding:0}}'
-    + '</style>';
+const PDSection = ({ title, rows }) => (
+  <div style={PD.sec}>
+    <div style={PD.sech}>{title}</div>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <tbody>
+        {rows.map(([k, v]) => (
+          <tr key={k}>
+            <td style={PD.td1}>{k}</td>
+            <td style={PD.td2}>{v || "-"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
 
-  const toolbar = '<div class="noprint" style="position:fixed;top:0;left:0;right:0;background:#1a1d27;padding:12px 24px;display:flex;gap:10px;align-items:center;z-index:9999;">'
-    + '<span style="color:#fff;font-weight:700;font-size:14px;flex:1;">' + issue.caseNo + ' &mdash; ' + issue.tireModel + ' ' + (issue.tireSize || '') + '</span>'
-    + '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">พิมพ์ / บันทึก PDF</button>'
-    + '<button onclick="window.close()" style="background:#475569;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:14px;cursor:pointer;">ปิด</button>'
-    + '</div><div style="height:56px"></div>'
-    + '<div class="noprint" style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:13px;text-align:center;">เมื่อหน้าพิมพ์เปิดขึ้น เลือก "ปลายทาง / Destination" เป็น <b>Save as PDF</b> แล้วกด Save เพื่อบันทึกไฟล์ลงเครื่อง — จัดให้พอดี 1 หน้าแล้ว</div>';
-
-  const logoUrl = window.location.origin + "/deestone-logo.png";
-  const header = '<div class="hdr" style="display:flex;align-items:center;gap:18px;">'
-    + '<img src="' + logoUrl + '" alt="Deestone" style="height:46px;width:auto;background:#fff;border-radius:6px;padding:5px 10px;" />'
-    + '<div>'
-    + '<div style="font-size:11px;color:#94a3b8;margin-bottom:3px;">รายงานปัญหาคุณภาพยาง</div>'
-    + '<div style="font-size:26px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + issue.caseNo + '</div>'
-    + '</div></div>';
-
-  const basicSection = '<div class="sec"><div class="sech">ข้อมูลพื้นฐาน</div><table>'
-    + row("แบรนด์", issue.brand)
-    + row("ประเภทสินค้า", issue.productType)
-    + row("วันที่รับยางเคลม", issue.claimDate)
-    + row("รุ่นยาง", issue.tireModel)
-    + row("ขนาดยาง", issue.tireSize)
-    + row("สัปดาห์ยาง / Serial", issue.tireWeek)
-    + '</table></div>';
-
-  const issueSection = '<div class="sec"><div class="sech">ข้อมูลปัญหา</div><table>'
-    + row("ประเภทปัญหา", (issue.issueTypes || []).join(", "))
-    + row("รายละเอียดปัญหา", issue.issueDetail)
-    + '</table></div>';
-
-  const shopSection = '<div class="sec"><div class="sech">ข้อมูลร้านค้า</div><table>'
-    + row("เลขที่ใบเคลม", issue.claimRefNo)
-    + row("ประเภทยางเคลม", issue.claimType)
-    + row("ชื่อร้านค้า", issue.shopName)
-    + row("ประเภทร้าน", issue.shopTier)
-    + row("ร้านตัวแทนที่รับมา", issue.distributorName)
-    + row("จังหวัดที่พบปัญหา", issue.province)
-    + row("วันที่พบปัญหา", issue.date)
-    + row("ผู้รายงาน", issue.reporterName)
-    + '</table></div>';
-
-  const imagesSection = (issue.images || []).filter(i => i.url).length > 0
-    ? '<div class="sec"><div class="sech">ภาพถ่าย</div><div class="imgs">' + imgHTML + '</div></div>' : '';
-
-  const footer = '<div class="ftr">Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: ' + issue.caseNo
-    + '<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>';
-
-  const body = '<div class="cols">'
-    + '<div class="col">' + basicSection + issueSection + '</div>'
-    + '<div class="col">' + shopSection + '</div>'
-    + '</div>' + imagesSection + footer;
-
-  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + issue.caseNo + '</title>' + styleTag + '</head><body>'
-    + toolbar + header + body + '</body></html>';
-}
+const PrintDoc = ({ issue }) => {
+  if (!issue) return null;
+  const imgs = (issue.images || []).filter(i => i.url).slice(0, 8);
+  return (
+    <div id="print-area">
+      <div style={PD.page}>
+        <div style={PD.hdr}>
+          <img src="/deestone-logo.png" alt="Deestone" style={{ height: 46, width: "auto", background: "#fff", borderRadius: 6, padding: "5px 10px" }} />
+          <div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3 }}>รายงานปัญหาคุณภาพยาง</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>{issue.caseNo}</div>
+          </div>
+        </div>
+        <div style={PD.cols}>
+          <div style={PD.col}>
+            <PDSection title="ข้อมูลพื้นฐาน" rows={[
+              ["แบรนด์", issue.brand], ["ประเภทสินค้า", issue.productType], ["วันที่รับยางเคลม", issue.claimDate],
+              ["รุ่นยาง", issue.tireModel], ["ขนาดยาง", issue.tireSize], ["สัปดาห์ยาง / Serial", issue.tireWeek],
+            ]} />
+            <PDSection title="ข้อมูลปัญหา" rows={[
+              ["ประเภทปัญหา", (issue.issueTypes || []).join(", ")], ["รายละเอียดปัญหา", issue.issueDetail],
+            ]} />
+          </div>
+          <div style={PD.col}>
+            <PDSection title="ข้อมูลร้านค้า" rows={[
+              ["เลขที่ใบเคลม", issue.claimRefNo], ["ประเภทยางเคลม", issue.claimType], ["ชื่อร้านค้า", issue.shopName],
+              ["ประเภทร้าน", issue.shopTier], ["ร้านตัวแทนที่รับมา", issue.distributorName],
+              ["จังหวัดที่พบปัญหา", issue.province], ["วันที่พบปัญหา", issue.date], ["ผู้รายงาน", issue.reporterName],
+            ]} />
+          </div>
+        </div>
+        {imgs.length > 0 && (
+          <div style={PD.sec}>
+            <div style={PD.sech}>ภาพถ่าย</div>
+            <div style={PD.imgs}>
+              {imgs.map((img, i) => <img key={i} src={img.url} alt="" style={PD.img} />)}
+            </div>
+          </div>
+        )}
+        <div style={PD.ftr}>
+          Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: {issue.caseNo}<br />
+          &copy; {new Date().getFullYear()} Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // บีบอัดรูปก่อนเก็บ: ย่อด้านยาวสุดไม่เกิน 1600px และลดคุณภาพ JPEG เหลือ 80%
 // ทำให้ไฟล์เล็กลงมาก (เก็บได้หลายเคสขึ้น) แต่ยังคมชัดพอสำหรับตรวจสอบ/ขยายดู
@@ -427,6 +420,7 @@ export default function App() {
   const [fMonth, setFMonth] = useState("ทั้งปี");
   const [sel, setSel] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [printIssue, setPrintIssue] = useState(null);
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
 
@@ -605,30 +599,21 @@ export default function App() {
   };
 
   const exportPDF = async (issue) => {
-    // เปิดหน้าต่างทันทีตอนคลิก (ก่อน await) ไม่งั้นบางเบราว์เซอร์ (มือถือ) จะบล็อก popup
-    const win = window.open("", "_blank");
-    if (win) {
-      win.document.write('<!DOCTYPE html><html><body style="background:#0f1117;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div>กำลังเตรียมเอกสาร...</div></body></html>');
-      win.document.close();
-    }
-    // ดึงรูปล่าสุดจาก Storage แล้วแปลงเป็น base64 ฝังตรงใน PDF
-    // (รูปจะแสดงแน่นอนเพราะไม่ต้องโหลดข้ามเครือข่าย/ไม่ติด CORS ในหน้าต่าง PDF)
-    let finalIssue = issue;
+    showToast("กำลังเตรียมเอกสาร...");
+    let withImages = issue;
     try {
       const images = await sbFetchImages(issue.id);
-      const embedded = await Promise.all((images || []).map(async (img) => ({
-        ...img,
-        url: img.url ? await imageUrlToDataUri(img.url) : img.url,
-      })));
-      finalIssue = { ...issue, images: embedded, imagesLoaded: true };
+      withImages = { ...issue, images, imagesLoaded: true };
     } catch {}
-    if (win && !win.closed) {
-      win.document.open();
-      win.document.write(buildPdfHtml(finalIssue));
-      win.document.close();
-    } else {
-      showToast("เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง", "err");
-    }
+    setPrintIssue(withImages);
+    // รอให้ React render #print-area และรูปโหลดเสร็จก่อนสั่งพิมพ์
+    setTimeout(() => {
+      const imgs = document.querySelectorAll("#print-area img");
+      const waitAll = Array.from(imgs).map(im => im.complete ? Promise.resolve() : new Promise(r => { im.onload = r; im.onerror = r; }));
+      Promise.all(waitAll).then(() => {
+        window.print();
+      });
+    }, 100);
   };
 
   const total = issues.length;
@@ -660,6 +645,7 @@ export default function App() {
   return (
     <div style={S.page}>
       <style>{CSS}</style>
+      <PrintDoc issue={printIssue} />
 
       {loading && (
         <div className="loading-overlay">

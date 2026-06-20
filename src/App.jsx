@@ -290,18 +290,23 @@ const BarChart = ({ title, items, color }) => {
 function buildPdfHtml(issue) {
   const row = (lbl, val) => '<tr><td style="padding:8px 12px;color:#64748b;font-size:13px;width:40%;border-bottom:1px solid #f1f5f9;">' + lbl + '</td><td style="padding:8px 12px;font-size:13px;font-weight:500;border-bottom:1px solid #f1f5f9;">' + (val || "-") + '</td></tr>';
   const imgHTML = (issue.images || []).filter(i => i.url).map(img =>
-    '<img src="' + img.url + '" style="width:160px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #ddd;" />'
+    '<img src="' + img.url + '" style="width:90px;height:68px;object-fit:cover;border-radius:5px;border:1px solid #ddd;" />'
   ).join("");
 
   const styleTag = '<style>'
-    + 'body{font-family:sans-serif;margin:0;padding:32px;color:#1e293b}'
-    + '.hdr{background:#1a1d27;color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:16px}'
-    + '.sec{margin-bottom:20px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}'
-    + '.sech{background:#f8fafc;padding:10px 14px;font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #e2e8f0}'
+    + '@page{size:A4;margin:10mm}'
+    + 'body{font-family:sans-serif;margin:0;padding:20px;color:#1e293b;font-size:12px}'
+    + '.hdr{background:#1a1d27;color:#fff;padding:14px 18px;border-radius:8px;margin-bottom:10px}'
+    + '.cols{display:flex;gap:12px}'
+    + '.col{flex:1;min-width:0}'
+    + '.sec{margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden}'
+    + '.sech{background:#f8fafc;padding:5px 10px;font-size:10px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0}'
     + 'table{width:100%;border-collapse:collapse}'
-    + '.imgs{display:flex;flex-wrap:wrap;gap:10px;padding:12px}'
-    + '.ftr{margin-top:32px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px}'
-    + '@media print{.noprint{display:none!important}}'
+    + 'td{padding:4px 10px!important;font-size:11px!important;border-bottom:1px solid #f1f5f9}'
+    + '.imgs{display:flex;flex-wrap:wrap;gap:6px;padding:8px}'
+    + '.imgs img{width:90px!important;height:68px!important;}'
+    + '.ftr{margin-top:10px;text-align:center;font-size:9px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}'
+    + '@media print{.noprint{display:none!important}body{padding:0}}'
     + '</style>';
 
   const toolbar = '<div class="noprint" style="position:fixed;top:0;left:0;right:0;background:#1a1d27;padding:12px 24px;display:flex;gap:10px;align-items:center;z-index:9999;">'
@@ -309,14 +314,14 @@ function buildPdfHtml(issue) {
     + '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">พิมพ์ / บันทึก PDF</button>'
     + '<button onclick="window.close()" style="background:#475569;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:14px;cursor:pointer;">ปิด</button>'
     + '</div><div style="height:56px"></div>'
-    + '<div class="noprint" style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:13px;text-align:center;">เมื่อหน้าพิมพ์เปิดขึ้น เลือก "ปลายทาง / Destination" เป็น <b>Save as PDF</b> แล้วกด Save เพื่อบันทึกไฟล์ลงเครื่อง</div>';
+    + '<div class="noprint" style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:13px;text-align:center;">เมื่อหน้าพิมพ์เปิดขึ้น เลือก "ปลายทาง / Destination" เป็น <b>Save as PDF</b> แล้วกด Save เพื่อบันทึกไฟล์ลงเครื่อง — จัดให้พอดี 1 หน้าแล้ว</div>';
 
   const logoUrl = window.location.origin + "/deestone-logo.png";
-  const header = '<div class="hdr" style="display:flex;align-items:center;gap:20px;">'
-    + '<img src="' + logoUrl + '" alt="Deestone" style="height:56px;width:auto;background:#fff;border-radius:6px;padding:6px 10px;" />'
+  const header = '<div class="hdr" style="display:flex;align-items:center;gap:14px;">'
+    + '<img src="' + logoUrl + '" alt="Deestone" style="height:36px;width:auto;background:#fff;border-radius:5px;padding:4px 8px;" />'
     + '<div>'
-    + '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">รายงานปัญหาคุณภาพยาง</div>'
-    + '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + issue.caseNo + '</div>'
+    + '<div style="font-size:9px;color:#94a3b8;margin-bottom:2px;">รายงานปัญหาคุณภาพยาง</div>'
+    + '<div style="font-size:20px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + issue.caseNo + '</div>'
     + '</div></div>';
 
   const basicSection = '<div class="sec"><div class="sech">ข้อมูลพื้นฐาน</div><table>'
@@ -350,8 +355,13 @@ function buildPdfHtml(issue) {
   const footer = '<div class="ftr">Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: ' + issue.caseNo
     + '<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>';
 
+  const body = '<div class="cols">'
+    + '<div class="col">' + basicSection + issueSection + '</div>'
+    + '<div class="col">' + shopSection + '</div>'
+    + '</div>' + imagesSection + footer;
+
   return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + issue.caseNo + '</title>' + styleTag + '</head><body>'
-    + toolbar + header + basicSection + issueSection + shopSection + imagesSection + footer + '</body></html>';
+    + toolbar + header + body + '</body></html>';
 }
 
 // บีบอัดรูปก่อนเก็บ: ย่อด้านยาวสุดไม่เกิน 1600px และลดคุณภาพ JPEG เหลือ 80%

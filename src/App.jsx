@@ -334,7 +334,7 @@ const PDSection = ({ title, rows }) => (
 
 const PrintDoc = ({ issue }) => {
   if (!issue) return null;
-  const imgs = (issue.images || []).filter(i => i.url).slice(0, 8);
+  const imgs = (issue.images || []).filter(i => i.url).slice(0, 5);
   return (
     <div id="print-area">
       <div style={PD.page}>
@@ -622,7 +622,7 @@ export default function App() {
   const needsDist = NEEDS_DIST.includes(form.shopTier);
   const hasFilters = search || fBrand !== "ทั้งหมด" || fIssue !== "ทั้งหมด" || fProd !== "ทั้งหมด" || fMonth !== "ทั้งปี";
 
-  // นับจำนวนแต่ละประเภทปัญหา (Top 8) สำหรับกราฟ
+  // นับจำนวนแต่ละประเภทปัญหา (Top 5) สำหรับกราฟ
   const issueTypeCounts = useMemo(() => {
     const counts = {};
     filtered.forEach(i => (i.issueTypes || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
@@ -728,8 +728,8 @@ export default function App() {
               ]} />
 
               {/* Bar: ประเภทปัญหา (Top 8) */}
-              <BarChart title="ประเภทปัญหาที่พบมากสุด (Top 8)" color="#6366f1" items={issueTypeCounts.map((x, i) => ({
-                label: x.label.length > 8 ? x.label.slice(0, 8) + "…" : x.label, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#ef4444", "#64748b"][i % 8],
+              <BarChart title="ประเภทปัญหาที่พบมากสุด (Top 5)" color="#6366f1" items={issueTypeCounts.map((x, i) => ({
+                label: x.label.length > 8 ? x.label.slice(0, 8) + "…" : x.label, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#ef4444", "#64748b"][i % 5],
                 count: x.count,
               }))} />
 

@@ -47,6 +47,34 @@ const sbFetchImages = async (id) => {
   return (data[0] && data[0].images) || [];
 };
 
+// บันทึก snapshot ก่อนแก้ไข (สำหรับ version history)
+const sbSaveHistory = async (issueId, snapshot, changedBy) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues_history", {
+    method: "POST",
+    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+    body: JSON.stringify({ issue_id: issueId, snapshot, changed_by: changedBy }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+};
+
+// ดึง history ของเคส
+const sbFetchHistory = async (issueId) => {
+  const url = SUPABASE_URL + "/rest/v1/issues_history?issue_id=eq." + issueId + "&order=changed_at.desc&select=*";
+  const res = await fetch(url, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+};
+
+// อัพเดตข้อมูลเคส
+const sbUpdate = async (id, payload) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, {
+    method: "PATCH",
+    headers: sbHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+};
+
 const sbDelete = async (id) => {
   const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, { method: "DELETE", headers: sbHeaders() });
   if (!res.ok) throw new Error(await res.text());
@@ -436,6 +464,10 @@ export default function App() {
   const [sel, setSel] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [printIssue, setPrintIssue] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [historyData, setHistoryData] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
 
@@ -667,6 +699,8 @@ export default function App() {
 
   const openDetail = (issue) => {
     setSel(issue);
+    setEditMode(false);
+    setShowHistory(false);
     if (!issue.imagesLoaded) {
       sbFetchImages(issue.id).then(images => {
         setSel(s => (s && s.id === issue.id) ? { ...s, images, imagesLoaded: true } : s);
@@ -674,6 +708,83 @@ export default function App() {
       }).catch(() => {});
     }
   };
+
+  const startEdit = () => {
+    setEditForm({
+      date: sel.date || "", claimDate: sel.claimDate || "", claimRefNo: sel.claimRefNo || "",
+      claimType: sel.claimType || "New Defective", brand: sel.brand || "Deestone",
+      productType: sel.productType || "Tire MC T/T", tireModel: sel.tireModel || "",
+      tireSize: sel.tireSize || "", tireWeek: sel.tireWeek || "",
+      issueTypes: sel.issueTypes || [], issueDetail: sel.issueDetail || "",
+      reporterName: sel.reporterName || "", shopName: sel.shopName || "",
+      shopTier: sel.shopTier || "ดิสทริบิวเตอร์", distributorName: sel.distributorName || "",
+      province: sel.province || "กรุงเทพมหานคร",
+    });
+    setEditMode(true);
+    setShowHistory(false);
+  };
+
+  const setEF = (key) => (e) => setEditForm(p => ({ ...p, [key]: e.target.value }));
+  const toggleEditIssueType = (t) => setEditForm(p => ({
+    ...p,
+    issueTypes: p.issueTypes.includes(t) ? p.issueTypes.filter(x => x !== t) : [...p.issueTypes, t],
+  }));
+  const onEditProductChange = (e) => {
+    const productType = e.target.value;
+    const valid = issueTypesFor(productType);
+    setEditForm(p => ({ ...p, productType, issueTypes: p.issueTypes.filter(t => valid.includes(t)) }));
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.tireModel) return showToast("กรุณากรอกรุ่นยาง", "err");
+    if (editForm.issueTypes.length === 0) return showToast("กรุณาเลือกประเภทปัญหา", "err");
+    const reporter = editForm.reporterName || sel.reporterName;
+    try {
+      // บันทึก snapshot ก่อนแก้ไข
+      const snapshot = { ...sel };
+      delete snapshot.images;
+      delete snapshot.imagesLoaded;
+      await sbSaveHistory(sel.id, snapshot, reporter);
+      // อัพเดตข้อมูลใหม่
+      const payload = {
+        date: editForm.date, claim_date: editForm.claimDate, claim_ref_no: editForm.claimRefNo,
+        claim_type: editForm.claimType, brand: editForm.brand, product_type: editForm.productType,
+        tire_model: editForm.tireModel, tire_size: editForm.tireSize, tire_week: editForm.tireWeek,
+        issue_types: editForm.issueTypes, issue_detail: editForm.issueDetail,
+        reporter_name: editForm.reporterName, shop_name: editForm.shopName,
+        shop_tier: editForm.shopTier, distributor_name: editForm.distributorName,
+        province: editForm.province,
+      };
+      await sbUpdate(sel.id, payload);
+      const updated = {
+        ...sel, date: editForm.date, claimDate: editForm.claimDate, claimRefNo: editForm.claimRefNo,
+        claimType: editForm.claimType, brand: editForm.brand, productType: editForm.productType,
+        tireModel: editForm.tireModel, tireSize: editForm.tireSize, tireWeek: editForm.tireWeek,
+        issueTypes: editForm.issueTypes, issueDetail: editForm.issueDetail,
+        reporterName: editForm.reporterName, shopName: editForm.shopName,
+        shopTier: editForm.shopTier, distributorName: editForm.distributorName,
+        province: editForm.province,
+      };
+      setSel(updated);
+      setIssues(p => p.map(i => i.id === sel.id ? updated : i));
+      setEditMode(false);
+      showToast("แก้ไขข้อมูลสำเร็จ");
+    } catch {
+      showToast("แก้ไขไม่สำเร็จ กรุณาลองใหม่", "err");
+    }
+  };
+
+  const loadHistory = async () => {
+    if (showHistory) { setShowHistory(false); return; }
+    try {
+      const data = await sbFetchHistory(sel.id);
+      setHistoryData(data);
+      setShowHistory(true);
+    } catch {
+      showToast("โหลดประวัติไม่สำเร็จ", "err");
+    }
+  };
+
   const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonth("ทั้งปี"); };
 
   return (
@@ -1019,12 +1130,88 @@ export default function App() {
         {/* DETAIL */}
         {view === "list" && sel && (
           <div className="fu">
-            <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-              <button onClick={() => setSel(null)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
+            <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+              <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
               <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
+              {!sel.cancelled && !editMode && <button onClick={startEdit} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "8px 20px" }}>✏️ แก้ไข</button>}
+              {!sel.cancelled && <button onClick={loadHistory} style={{ ...S.btn, background: showHistory ? "#6366f1" : "transparent", color: showHistory ? "#fff" : "#94a3b8", border: "1px solid " + (showHistory ? "#6366f1" : "#2d3148"), padding: "8px 20px" }}>🕐 ประวัติการแก้ไข</button>}
               {!sel.cancelled && <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ยกเลิกเคส</button>}
               {sel.cancelled && <span style={{ marginLeft: "auto", color: "#ef4444", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>⛔ เคสนี้ถูกยกเลิกแล้ว</span>}
             </div>
+
+            {/* HISTORY PANEL */}
+            {showHistory && (
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #6366f1" }}>
+                <div style={{ fontWeight: 700, color: "#6366f1", fontSize: 14, marginBottom: 12 }}>🕐 ประวัติการแก้ไข ({historyData.length} ครั้ง)</div>
+                {historyData.length === 0
+                  ? <div style={{ color: "#64748b", fontSize: 13 }}>ยังไม่มีประวัติการแก้ไข</div>
+                  : historyData.map((h, idx) => {
+                    const snap = h.snapshot || {};
+                    return (
+                      <div key={h.id} style={{ borderBottom: "1px solid #1e2235", padding: "12px 0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13 }}>ครั้งที่ {historyData.length - idx} — {snap.reporterName || "-"}</span>
+                          <span style={{ fontSize: 12, color: "#64748b" }}>{new Date(h.changed_at).toLocaleString("th-TH")}</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                          {[["แบรนด์", snap.brand], ["ประเภทสินค้า", snap.productType], ["รุ่นยาง", snap.tireModel], ["ขนาดยาง", snap.tireSize], ["ประเภทปัญหา", (snap.issueTypes || []).join(", ")], ["ร้านค้า", snap.shopName], ["จังหวัด", snap.province]].map(([k, v]) => (
+                            <div key={k}><span style={{ color: "#475569" }}>{k}: </span>{v || "-"}</div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </Card>
+            )}
+
+            {/* EDIT FORM */}
+            {editMode && editForm && (
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #f59e0b" }}>
+                <div style={{ fontWeight: 700, color: "#f59e0b", fontSize: 14, marginBottom: 16 }}>✏️ แก้ไขข้อมูลเคส {sel.caseNo}</div>
+                <div className="form-grid">
+                  <Field label="แบรนด์"><ButtonGroup value={editForm.brand} onChange={v => setEditForm(p => ({ ...p, brand: v }))} options={BRANDS} getColor={b => BC[b]} /></Field>
+                  <TField label="วันที่พบปัญหา" type="date" value={editForm.date} onChange={setEF("date")} />
+                  <SField label="ประเภทสินค้า" options={PRODUCT_TYPES} value={editForm.productType} onChange={onEditProductChange} />
+                  <TField label="รุ่นยาง" required value={editForm.tireModel} onChange={setEF("tireModel")} />
+                  <TField label="ขนาดยาง" value={editForm.tireSize} onChange={setEF("tireSize")} />
+                  <TField label="สัปดาห์ยาง / Serial" value={editForm.tireWeek} onChange={setEF("tireWeek")} />
+                  <TField label="วันที่รับยางเคลม" type="date" value={editForm.claimDate} onChange={setEF("claimDate")} />
+                  <TField label="เลขที่ใบเคลม" value={editForm.claimRefNo} onChange={setEF("claimRefNo")} />
+                  <div style={S.colFull}>
+                    <Field label="ประเภทปัญหา *">
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {issueTypesFor(editForm.productType).map(t => {
+                          const checked = editForm.issueTypes.includes(t);
+                          return (
+                            <button key={t} onClick={() => toggleEditIssueType(t)}
+                              style={{ ...S.btn, textAlign: "left", padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 8, background: checked ? "#6366f120" : "#0f1117", color: checked ? "#fff" : "#94a3b8", border: "1.5px solid " + (checked ? "#6366f1" : "#2d3148") }}>
+                              <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#6366f1" : "transparent", border: "1.5px solid " + (checked ? "#6366f1" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
+                              {t}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                  </div>
+                  <TField label="รายละเอียดปัญหา" value={editForm.issueDetail} onChange={setEF("issueDetail")} />
+                  <TField label="ชื่อร้านค้า" required value={editForm.shopName} onChange={setEF("shopName")} />
+                  <div style={S.colFull}>
+                    <Field label="ประเภทร้าน">
+                      <ButtonGroup small value={editForm.shopTier}
+                        onChange={v => setEditForm(p => ({ ...p, shopTier: v, distributorName: NEEDS_DIST.includes(v) ? p.distributorName : "" }))}
+                        options={SHOP_TIERS} getColor={() => "#6366f1"} />
+                    </Field>
+                  </div>
+                  {NEEDS_DIST.includes(editForm.shopTier) && <TField label="ร้านตัวแทนที่รับมา" required value={editForm.distributorName} onChange={setEF("distributorName")} />}
+                  <SField label="จังหวัด" options={PROVINCES} value={editForm.province} onChange={setEF("province")} />
+                  <TField label="ผู้รายงาน" required value={editForm.reporterName} onChange={setEF("reporterName")} />
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                  <button onClick={() => setEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>ยกเลิก</button>
+                  <button className="btn-green" onClick={saveEdit} style={{ ...S.btn, flex: 2, color: "#fff", padding: 12, fontSize: 15 }}>💾 บันทึกการแก้ไข</button>
+                </div>
+              </Card>
+            )}
             <div className="detail-grid">
               <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, minWidth: 0, maxWidth: "100%", flexWrap: "wrap", overflow: "hidden" }}>
                 <img src="/deestone-logo.png" alt="Deestone" className="detail-logo" style={{ height: 64, width: "auto", flexShrink: 0, maxWidth: "100%" }} />

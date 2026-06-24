@@ -460,11 +460,16 @@ export default function App() {
   };
 
   const validateForm = () => {
+    if (!form.date) return showToast("กรุณากรอกวันที่พบปัญหา", "err"), false;
+    if (!form.claimDate) return showToast("กรุณากรอกวันที่รับยางเคลม", "err"), false;
+    if (!form.claimRefNo) return showToast("กรุณากรอกเลขที่ใบเคลม", "err"), false;
     if (!form.tireModel) return showToast("กรุณากรอกรุ่นยาง", "err"), false;
+    if (!form.tireSize) return showToast("กรุณากรอกขนาดยาง", "err"), false;
+    if (!form.tireWeek) return showToast("กรุณากรอกสัปดาห์ยาง / Serial", "err"), false;
     if (form.issueTypes.length === 0) return showToast("กรุณาเลือกประเภทปัญหาอย่างน้อย 1 ข้อ", "err"), false;
-    if (!form.reporterName) return showToast("กรุณากรอกผู้รายงาน", "err"), false;
     if (!form.shopName) return showToast("กรุณากรอกชื่อร้านค้า", "err"), false;
     if (NEEDS_DIST.includes(form.shopTier) && !form.distributorName) return showToast("กรุณากรอกร้านตัวแทนที่รับมา", "err"), false;
+    if (!form.reporterName) return showToast("กรุณากรอกผู้รายงาน", "err"), false;
     return true;
   };
 
@@ -798,9 +803,9 @@ export default function App() {
                   </Field>
                   <TField label="วันที่พบปัญหา" required type="date" value={form.date} onChange={setF("date")} />
                   <SField label="ประเภทสินค้า" options={PRODUCT_TYPES} value={form.productType} onChange={onProductChange} />
-                  <TField label="สัปดาห์ยาง / Serial Number" placeholder="เช่น 2524, SN-001" value={form.tireWeek} onChange={setF("tireWeek")} />
+                  <TField label="สัปดาห์ยาง / Serial Number" required placeholder="เช่น 2524, SN-001" value={form.tireWeek} onChange={setF("tireWeek")} />
                   <TField label="รุ่นยาง" required placeholder="เช่น D-268" value={form.tireModel} onChange={setF("tireModel")} />
-                  <TField label="ขนาดยาง" placeholder="เช่น 185/65R15" value={form.tireSize} onChange={setF("tireSize")} />
+                  <TField label="ขนาดยาง" required placeholder="เช่น 185/65R15" value={form.tireSize} onChange={setF("tireSize")} />
                 </div>
               </Card>
 
@@ -827,8 +832,8 @@ export default function App() {
 
               <Card title="ข้อมูลร้านค้า">
                 <div className="form-grid">
-                  <TField label="วันที่รับยางเคลม" type="date" value={form.claimDate} onChange={setF("claimDate")} />
-                  <TField label="เลขที่ใบเคลม" placeholder="เช่น CLM-2026-001" value={form.claimRefNo} onChange={setF("claimRefNo")} />
+                  <TField label="วันที่รับยางเคลม" required type="date" value={form.claimDate} onChange={setF("claimDate")} />
+                  <TField label="เลขที่ใบเคลม" required placeholder="เช่น CLM-2026-001" value={form.claimRefNo} onChange={setF("claimRefNo")} />
                   <Field label="ประเภทยางเคลม">
                     <ButtonGroup value={form.claimType} onChange={v => setForm(p => ({ ...p, claimType: v }))} options={CLAIM_TYPES} getColor={() => "#6366f1"} />
                   </Field>

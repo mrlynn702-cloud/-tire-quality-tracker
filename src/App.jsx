@@ -60,7 +60,11 @@ const sbUploadImage = async (dataUrl, fileName) => {
 };
 
 // ---------- constants ----------
-const BRANDS = ["Deestone", "Bluhorse"];
+const ADMIN_PASS = "Mrlynn702";
+const requireAdminPass = (action) => {
+  const input = window.prompt("🔒 กรุณาใส่รหัสผ่านผู้ดูแลระบบเพื่อ" + action);
+  return input === ADMIN_PASS;
+};
 const PRODUCT_TYPES = ["Tire MC T/T", "Tire MC T/L", "Tire BC", "Tube MC", "Tube BC"];
 const ISSUE_TYPES_TIRE = ["รั่วหน้ายาง", "รั่วแก้มยาง", "แผลแก้มยาง", "แผลหน้ายาง", "บวมไหล่ยาง", "บวมแก้มยาง", "บวมหน้ายาง", "บวมใต้ท้องยาง", "ลวดคด", "สิ่งแปลกปลอมอยู่ในยาง", "แตกร่องดอกยาง", "ยางส่าย", "ยางไม่กลม", "ยางขึ้นขอบยาก", "ยางสกปรก", "อื่นๆ (ระบุในรายละเอียดปัญหา)"];
 const ISSUE_TYPES_TUBE = ["รั่ว", "ระเบิด", "เติมลมไม่เข้า", "มีสิ่งแปลกปลอม", "แผล", "ยางในบาง", "ฐานวาล์วแยกตัว", "วาล์วหลุดแกน", "อื่นๆ (ระบุในช่องรายละเอียดปัญหา)"];
@@ -513,6 +517,7 @@ export default function App() {
   };
 
   const deleteIssue = async (issue) => {
+    if (!requireAdminPass("ลบข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
     if (!window.confirm("ยืนยันลบเคส " + issue.caseNo + " ? การลบไม่สามารถย้อนกลับได้")) return;
     try {
       await sbDelete(issue.id);
@@ -526,6 +531,7 @@ export default function App() {
 
   const deleteMany = async (ids) => {
     if (ids.length === 0) return;
+    if (!requireAdminPass("ลบข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
     if (!window.confirm("ยืนยันลบ " + ids.length + " รายการ? การลบไม่สามารถย้อนกลับได้")) return;
     showToast("กำลังลบข้อมูล...");
     const results = await Promise.allSettled(ids.map(id => sbDelete(id)));
@@ -559,6 +565,7 @@ export default function App() {
   };
 
   const exportCSV = async () => {
+    if (!requireAdminPass("ดาวน์โหลด CSV")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
     showToast("กำลังเตรียมไฟล์...");
     // โหลดรูปของเคสที่ยังไม่เคยโหลด (สำหรับใส่ลิงก์ใน Excel)
     const withImages = await Promise.all(filtered.map(async (i) => {

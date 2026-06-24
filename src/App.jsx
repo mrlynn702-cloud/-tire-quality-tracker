@@ -20,12 +20,22 @@ const sbFetch = async (method, body) => {
 };
 
 // โหลดรายการแบบเร็ว: ไม่ดึงคอลัมน์ images (รูปภาพ) เพื่อให้เปิดแอพเร็วขึ้น
-const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province";
+const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province,cancelled";
 const sbFetchList = async () => {
   const url = SUPABASE_URL + "/rest/v1/issues?select=" + LIST_COLUMNS + "&order=created_at.desc";
   const res = await fetch(url, { headers: sbHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+};
+
+// Soft delete: ทำเครื่องหมายว่ายกเลิก ไม่ลบออกจากฐานข้อมูล
+const sbCancel = async (id) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, {
+    method: "PATCH",
+    headers: sbHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ cancelled: true }),
+  });
+  if (!res.ok) throw new Error(await res.text());
 };
 
 // โหลดรูปภาพของเคสเดียว (ใช้ตอนเปิดดูรายละเอียด)
@@ -62,7 +72,7 @@ const sbUploadImage = async (dataUrl, fileName) => {
 // ---------- constants ----------
 const ADMIN_PASS = "Mrlynn702";
 const requireAdminPass = (action) => {
-  const input = window.prompt("🔒 กรุณาใส่รหัสผ่านผู้ดูแลระบบเพื่อ" + action);
+  const input = window.prompt("🔒 กรุณาใส่รหัสผ่านหรือติดต่อ Admin เพื่อ" + action);
   return input === ADMIN_PASS;
 };
 const BRANDS = ["Deestone", "Bluhorse"];
@@ -445,7 +455,7 @@ export default function App() {
         tireModel: r.tire_model, tireSize: r.tire_size, tireWeek: r.tire_week,
         issueTypes: r.issue_types || (r.issue_type ? [r.issue_type] : []), issueDetail: r.issue_detail,
         reporterName: r.reporter_name, shopName: r.shop_name, shopTier: r.shop_tier,
-        distributorName: r.distributor_name, province: r.province, images: [], imagesLoaded: false,
+        distributorName: r.distributor_name, province: r.province, cancelled: r.cancelled || false, images: [], imagesLoaded: false,
       }));
       setIssues(mapped);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -523,32 +533,43 @@ export default function App() {
   };
 
   const deleteIssue = async (issue) => {
-    if (!requireAdminPass("ลบข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
-    if (!window.confirm("ยืนยันลบเคส " + issue.caseNo + " ? การลบไม่สามารถย้อนกลับได้")) return;
+    if (!requireAdminPass("ยกเลิกข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
+    if (!window.confirm("ยืนยันยกเลิกเคส " + issue.caseNo + " ? เคสจะถูกขีดฆ่าแต่ยังเก็บเลขเคสไว้")) return;
     try {
-      await sbDelete(issue.id);
-      setIssues(p => p.filter(i => i.id !== issue.id));
+      await sbCancel(issue.id);
+      setIssues(p => p.map(i => i.id === issue.id ? { ...i, cancelled: true } : i));
       setSel(null);
-      showToast("ลบข้อมูลสำเร็จ");
+      showToast("ยกเลิกเคสสำเร็จ");
     } catch {
-      showToast("ลบไม่สำเร็จ กรุณาลองใหม่", "err");
+      showToast("เกิดข้อผิดพลาด กรุณาลองใหม่", "err");
     }
   };
 
   const deleteMany = async (ids) => {
     if (ids.length === 0) return;
-    if (!requireAdminPass("ลบข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
-    if (!window.confirm("ยืนยันลบ " + ids.length + " รายการ? การลบไม่สามารถย้อนกลับได้")) return;
-    showToast("กำลังลบข้อมูล...");
-    const results = await Promise.allSettled(ids.map(id => sbDelete(id)));
+    if (!requireAdminPass("ยกเลิกข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
+    if (!window.confirm("ยืนยันยกเลิก " + ids.length + " รายการ? เคสจะถูกขีดฆ่าแต่ยังเก็บเลขเคสไว้")) return;
+    showToast("กำลังยกเลิกข้อมูล...");
+    const results = await Promise.allSettled(ids.map(id => sbCancel(id)));
     const okIds = ids.filter((id, i) => results[i].status === "fulfilled");
-    setIssues(p => p.filter(i => !okIds.includes(i.id)));
+    setIssues(p => p.map(i => okIds.includes(i.id) ? { ...i, cancelled: true } : i));
     setSelectedIds(new Set());
-    if (okIds.length === ids.length) showToast("ลบ " + okIds.length + " รายการสำเร็จ");
-    else showToast("ลบสำเร็จ " + okIds.length + " จาก " + ids.length + " รายการ", okIds.length === 0 ? "err" : "ok");
+    if (okIds.length === ids.length) showToast("ยกเลิก " + okIds.length + " รายการสำเร็จ");
+    else showToast("ยกเลิกสำเร็จ " + okIds.length + " จาก " + ids.length + " รายการ", okIds.length === 0 ? "err" : "ok");
   };
 
   const filtered = useMemo(() => issues.filter(i => {
+    if (i.cancelled) return false;
+    const q = search.toLowerCase();
+    return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
+      && (fBrand === "ทั้งหมด" || i.brand === fBrand)
+      && (fIssue === "ทั้งหมด" || (i.issueTypes || []).includes(fIssue))
+      && (fProd === "ทั้งหมด" || i.productType === fProd)
+      && (fMonth === "ทั้งปี" || (i.date || "").slice(0, 7) === fMonth);
+  }), [issues, search, fBrand, fIssue, fProd, fMonth]);
+
+  // รายการทั้งหมดสำหรับหน้ารายการ (รวมที่ยกเลิกแล้ว แต่ขีดฆ่า)
+  const listItems = useMemo(() => issues.filter(i => {
     const q = search.toLowerCase();
     return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
       && (fBrand === "ทั้งหมด" || i.brand === fBrand)
@@ -920,7 +941,7 @@ export default function App() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
               <div>
                 <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>รายการปัญหาทั้งหมด</h2>
-                <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {filtered.length} รายการ{selectedIds.size > 0 ? " • เลือกอยู่ " + selectedIds.size + " รายการ" : ""}</p>
+                <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {listItems.length} รายการ{selectedIds.size > 0 ? " • เลือกอยู่ " + selectedIds.size + " รายการ" : ""}</p>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 {selectedIds.size > 0 && (
@@ -952,29 +973,43 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0
+                  {listItems.length === 0
                     ? <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
-                    : filtered.map((issue, i) => (
-                      <tr key={issue.id} className="rh" style={{ borderBottom: "1px solid #1e2235", background: selectedIds.has(issue.id) ? "#6366f115" : (i % 2 === 0 ? "transparent" : "#14161f") }}>
-                        <td style={{ padding: "12px 10px" }} onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" style={{ width: 16, height: 16, cursor: "pointer" }} checked={selectedIds.has(issue.id)}
-                            onChange={e => setSelectedIds(prev => {
-                              const next = new Set(prev);
-                              if (e.target.checked) next.add(issue.id); else next.delete(issue.id);
-                              return next;
-                            })} />
-                        </td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer" }}>{issue.caseNo}</td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#94a3b8", whiteSpace: "nowrap", cursor: "pointer" }}>{issue.date}</td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", cursor: "pointer" }}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.productType}</td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", cursor: "pointer" }}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#e2e8f0", fontSize: 12, cursor: "pointer" }}>{(issue.issueTypes || []).join(", ")}</td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", cursor: "pointer" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.province}</td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.reporterName}</td>
-                      </tr>
-                    ))}
+                    : listItems.map((issue, i) => {
+                        const isCancelled = issue.cancelled;
+                        const rowStyle = {
+                          borderBottom: "1px solid #1e2235",
+                          background: isCancelled ? "#1a0f0f" : (selectedIds.has(issue.id) ? "#6366f115" : (i % 2 === 0 ? "transparent" : "#14161f")),
+                          opacity: isCancelled ? 0.55 : 1,
+                          textDecoration: isCancelled ? "line-through" : "none",
+                        };
+                        const cellClick = isCancelled ? undefined : () => openDetail(issue);
+                        const cellStyle = (extra) => ({ padding: "12px 14px", cursor: isCancelled ? "default" : "pointer", ...extra });
+                        return (
+                          <tr key={issue.id} style={rowStyle}>
+                            <td style={{ padding: "12px 10px" }} onClick={e => e.stopPropagation()}>
+                              {!isCancelled && (
+                                <input type="checkbox" style={{ width: 16, height: 16, cursor: "pointer" }} checked={selectedIds.has(issue.id)}
+                                  onChange={e => setSelectedIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(issue.id); else next.delete(issue.id);
+                                    return next;
+                                  })} />
+                              )}
+                              {isCancelled && <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>ยกเลิก</span>}
+                            </td>
+                            <td onClick={cellClick} style={cellStyle({ color: isCancelled ? "#64748b" : "#6366f1", fontWeight: 700, whiteSpace: "nowrap" })}>{issue.caseNo}</td>
+                            <td onClick={cellClick} style={cellStyle({ color: "#94a3b8", whiteSpace: "nowrap" })}>{issue.date}</td>
+                            <td onClick={cellClick} style={cellStyle({})}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.productType}</td>
+                            <td onClick={cellClick} style={cellStyle({})}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
+                            <td onClick={cellClick} style={cellStyle({ color: "#e2e8f0", fontSize: 12 })}>{(issue.issueTypes || []).join(", ")}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({})}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.province}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.reporterName}</td>
+                          </tr>
+                        );
+                      })}
                 </tbody>
               </table></div>
             </Card>
@@ -987,7 +1022,8 @@ export default function App() {
             <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
               <button onClick={() => setSel(null)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
               <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
-              <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ลบข้อมูล</button>
+              {!sel.cancelled && <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ยกเลิกเคส</button>}
+              {sel.cancelled && <span style={{ marginLeft: "auto", color: "#ef4444", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>⛔ เคสนี้ถูกยกเลิกแล้ว</span>}
             </div>
             <div className="detail-grid">
               <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, minWidth: 0, maxWidth: "100%", flexWrap: "wrap", overflow: "hidden" }}>

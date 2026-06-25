@@ -641,17 +641,24 @@ export default function App() {
       return found ? { ...p, images: found.images, imagesLoaded: true } : p;
     }));
 
-    // เรียงเก่า -> ใหม่ (รายการที่เพิ่มใหม่อยู่ด้านล่าง)
-    const ordered = [...withImages].sort((a, b) => (a.caseNo || "").localeCompare(b.caseNo || ""));
+    // รวมเคสที่ยกเลิกแล้วด้วย (แสดงแค่เลขเคส + สถานะ)
+    const cancelledItems = issues.filter(i => i.cancelled);
+
+    // เรียงเก่า -> ใหม่ รวมทั้งปกติและยกเลิก
+    const ordered = [...withImages, ...cancelledItems].sort((a, b) => (a.caseNo || "").localeCompare(b.caseNo || ""));
     const imgUrls = (i) => (i.images || []).filter(im => im.url && !im.url.startsWith("data:")).map(im => im.url);
-    const maxImgs = Math.max(0, ...ordered.map(i => imgUrls(i).length));
+    const maxImgs = Math.max(0, ...withImages.map(i => imgUrls(i).length));
     const imgHeaders = Array.from({ length: maxImgs }, (_, k) => "รูปที่ " + (k + 1));
-    const h = ["เลขเคส","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
+    const h = ["เลขเคส","สถานะ","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
     const rows = ordered.map(i => {
+      if (i.cancelled) {
+        // เคสที่ยกเลิก — ใส่แค่เลขเคสและสถานะ ช่องอื่นว่าง
+        return [i.caseNo, "ยกเลิก", ...Array(h.length - 2).fill("")];
+      }
       const urls = imgUrls(i);
       const imgCols = Array.from({ length: maxImgs }, (_, k) => urls[k] || "");
       return [
-        i.caseNo, i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
+        i.caseNo, "ปกติ", i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
         i.tireModel, i.tireSize, i.tireWeek, (i.issueTypes || []).join(", "), i.issueDetail, i.reporterName,
         i.shopName, i.shopTier, i.distributorName, i.province, ...imgCols,
       ];

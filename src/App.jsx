@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import * as XLSX from "xlsx";
 
 const SUPABASE_URL = "https://xygvrhzvieulmexyjxuv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wCNv0fp4POlUtncwJrug5g_6dNLyXbU";
@@ -624,7 +625,7 @@ export default function App() {
   };
 
   const exportCSV = async () => {
-    if (!requireAdminPass("ดาวน์โหลด CSV")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
+    if (!requireAdminPass("ดาวน์โหลดไฟล์ Excel")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
     showToast("กำลังเตรียมไฟล์...");
     // โหลดรูปของเคสที่ยังไม่เคยโหลด (สำหรับใส่ลิงก์ใน Excel)
     const withImages = await Promise.all(filtered.map(async (i) => {
@@ -649,11 +650,12 @@ export default function App() {
     const imgUrls = (i) => (i.images || []).filter(im => im.url && !im.url.startsWith("data:")).map(im => im.url);
     const maxImgs = Math.max(0, ...withImages.map(i => imgUrls(i).length));
     const imgHeaders = Array.from({ length: maxImgs }, (_, k) => "รูปที่ " + (k + 1));
-    const h = ["เลขเคส","สถานะ","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
+    const headers = ["เลขเคส","สถานะ","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
+    const imgColStart = headers.length - maxImgs; // index (0-based) ของคอลัมน์รูปแรก
+
     const rows = ordered.map(i => {
       if (i.cancelled) {
-        // เคสที่ยกเลิก — ใส่แค่เลขเคสและสถานะ ช่องอื่นว่าง
-        return [i.caseNo, "ยกเลิก", ...Array(h.length - 2).fill("")];
+        return [i.caseNo, "ยกเลิก", ...Array(headers.length - 2).fill("")];
       }
       const urls = imgUrls(i);
       const imgCols = Array.from({ length: maxImgs }, (_, k) => urls[k] || "");
@@ -663,12 +665,25 @@ export default function App() {
         i.shopName, i.shopTier, i.distributorName, i.province, ...imgCols,
       ];
     });
-    const csv = [h, ...rows].map(r => r.map(v => '"' + (v || "").toString().replace(/"/g, '""') + '"').join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv" }));
-    a.download = "tire_quality.csv";
-    a.click();
-    showToast("Export CSV สำเร็จ");
+
+    // สร้างไฟล์ .xlsx ด้วย SheetJS แล้วใส่ hyperlink ให้คอลัมน์รูปภาพ กดแล้วเปิดรูปได้ทันที
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    rows.forEach((row, rIdx) => {
+      for (let c = imgColStart; c < headers.length; c++) {
+        const url = row[c];
+        if (url) {
+          const cellRef = XLSX.utils.encode_cell({ r: rIdx + 1, c });
+          ws[cellRef].l = { Target: url, Tooltip: "เปิดดูรูปภาพ" };
+          ws[cellRef].v = "🔗 เปิดดูรูป";
+          ws[cellRef].t = "s";
+        }
+      }
+    });
+    ws["!cols"] = headers.map((h, idx) => ({ wch: idx < imgColStart ? 16 : 12 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Tire Quality");
+    XLSX.writeFile(wb, "tire_quality.xlsx");
+    showToast("Export Excel สำเร็จ");
   };
 
   const exportPDF = async (issue) => {
@@ -1065,7 +1080,7 @@ export default function App() {
                 {selectedIds.size > 0 && (
                   <button onClick={() => deleteMany([...selectedIds])} style={{ ...S.btn, background: "#ef4444", color: "#fff", padding: "10px 16px" }}>🗑️ ลบ {selectedIds.size} รายการ</button>
                 )}
-                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export CSV</button>
+                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export Excel</button>
               </div>
             </div>
             <Card style={{ marginBottom: 16 }}>

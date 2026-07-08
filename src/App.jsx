@@ -21,7 +21,7 @@ const sbFetch = async (method, body) => {
 };
 
 // โหลดรายการแบบเร็ว: ไม่ดึงคอลัมน์ images (รูปภาพ) เพื่อให้เปิดแอพเร็วขึ้น
-const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province,cancelled,factory_dept,factory_cause,factory_cause_detail,factory_problem_detail,factory_plan,factory_due_date,factory_responsible,factory_closed";
+const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province,cancelled,factory_dept,factory_cause,factory_cause_detail,factory_problem_detail,factory_plan,factory_due_date,factory_responsible,factory_closed,factory_updated_at";
 const sbFetchList = async () => {
   const url = SUPABASE_URL + "/rest/v1/issues?select=" + LIST_COLUMNS + "&order=created_at.desc";
   const res = await fetch(url, { headers: sbHeaders() });
@@ -441,6 +441,7 @@ const PrintDoc = ({ issue }) => {
                 <tr><td style={PD.td1}>ผู้รับผิดชอบ</td><td style={PD.td2}>{issue.factoryResponsible || "-"}</td></tr>
                 <tr><td style={PD.td1}>ต้นเหตุของปัญหา</td><td style={PD.td2}>{issue.factoryCause || "-"}{issue.factoryCauseDetail ? " (" + issue.factoryCauseDetail + ")" : ""}</td></tr>
                 <tr><td style={PD.td1}>กำหนดแก้ไขแล้วเสร็จ</td><td style={PD.td2}>{issue.factoryDueDate || "-"}</td></tr>
+                <tr><td style={PD.td1}>บันทึกล่าสุดเมื่อ</td><td style={PD.td2}>{issue.factoryUpdatedAt ? new Date(issue.factoryUpdatedAt).toLocaleString("th-TH") : "-"}</td></tr>
                 <tr><td style={PD.td1}>รายละเอียดปัญหาที่พบ</td><td style={PD.td2}>{issue.factoryProblemDetail || "-"}</td></tr>
                 <tr><td style={PD.td1}>แผนการแก้ไข</td><td style={PD.td2}>{issue.factoryPlan || "-"}</td></tr>
               </tbody>
@@ -533,7 +534,7 @@ export default function App() {
         factoryDept: r.factory_dept || "", factoryCause: r.factory_cause || "", factoryCauseDetail: r.factory_cause_detail || "",
         factoryProblemDetail: r.factory_problem_detail || "", factoryPlan: r.factory_plan || "",
         factoryDueDate: r.factory_due_date || "", factoryResponsible: r.factory_responsible || "",
-        factoryClosed: r.factory_closed || false,
+        factoryClosed: r.factory_closed || false, factoryUpdatedAt: r.factory_updated_at || null,
         factoryProblemImages: [], factoryPlanImages: [], factoryImagesLoaded: false,
         images: [], imagesLoaded: false,
       }));
@@ -910,12 +911,14 @@ export default function App() {
       delete snapshot.factoryImagesLoaded;
       await sbSaveHistory(sel.id, snapshot, factoryForm.factoryResponsible || sel.reporterName);
 
+      const now = new Date().toISOString();
       const payload = {
         factory_dept: factoryForm.factoryDept, factory_cause: factoryForm.factoryCause,
         factory_cause_detail: factoryForm.factoryCauseDetail, factory_problem_detail: factoryForm.factoryProblemDetail,
         factory_problem_images: problemImages, factory_plan: factoryForm.factoryPlan,
         factory_plan_images: planImages, factory_due_date: factoryForm.factoryDueDate || null,
         factory_responsible: factoryForm.factoryResponsible, factory_closed: factoryForm.factoryClosed,
+        factory_updated_at: now,
       };
       await sbUpdate(sel.id, payload);
       const updated = {
@@ -924,7 +927,7 @@ export default function App() {
         factoryProblemImages: problemImages, factoryPlan: factoryForm.factoryPlan,
         factoryPlanImages: planImages, factoryDueDate: factoryForm.factoryDueDate,
         factoryResponsible: factoryForm.factoryResponsible, factoryClosed: factoryForm.factoryClosed,
-        factoryImagesLoaded: true,
+        factoryUpdatedAt: now, factoryImagesLoaded: true,
       };
       setSel(updated);
       setIssues(p => p.map(i => i.id === sel.id ? updated : i));
@@ -1489,6 +1492,9 @@ export default function App() {
                       <div><span style={{ color: "#64748b" }}>ต้นเหตุของปัญหา: </span>{sel.factoryCause || "-"}{sel.factoryCauseDetail ? " (" + sel.factoryCauseDetail + ")" : ""}</div>
                       <div><span style={{ color: "#64748b" }}>กำหนดแก้ไขเสร็จ: </span>{sel.factoryDueDate || "-"}</div>
                     </div>
+                    {sel.factoryUpdatedAt && (
+                      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>🕐 บันทึกล่าสุดเมื่อ: {new Date(sel.factoryUpdatedAt).toLocaleString("th-TH")}</div>
+                    )}
                     {sel.factoryProblemDetail && (
                       <div style={{ marginBottom: 12 }}>
                         <div style={{ color: "#64748b", fontSize: 13, marginBottom: 4 }}>รายละเอียดปัญหาที่พบ</div>

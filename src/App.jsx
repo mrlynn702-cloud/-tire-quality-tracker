@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
+import html2pdf from "html2pdf.js";
 
 const SUPABASE_URL = "https://xygvrhzvieulmexyjxuv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wCNv0fp4POlUtncwJrug5g_6dNLyXbU";
@@ -199,7 +200,8 @@ const CSS = `
   }
 
   /* ---- การพิมพ์ PDF ในหน้าเดียวกับแอพ ---- */
-  #print-area { display: none; }
+  /* ใช้ position:fixed ซ่อนไว้นอกจอแทน display:none เพื่อให้ html2pdf (html2canvas) จับภาพได้ */
+  #print-area { position: fixed; left: -9999px; top: 0; width: 794px; background: #fff; }
   @media print {
     @page { size: A4; margin: 12mm; }
     body * { visibility: hidden; }
@@ -754,7 +756,7 @@ export default function App() {
   };
 
   const exportPDF = async (issue, mode) => {
-    showToast(mode === "save" ? "กำลังเตรียมไฟล์ PDF... เลือก \"Save as PDF\" ในหน้าต่างที่เปิดขึ้น" : "กำลังเตรียมเอกสาร... เลือกเครื่องพิมพ์ในหน้าต่างที่เปิดขึ้น");
+    showToast(mode === "save" ? "กำลังสร้างไฟล์ PDF..." : "กำลังเตรียมเอกสาร... เลือกเครื่องพิมพ์ในหน้าต่างที่เปิดขึ้น");
     let withImages = issue;
     try {
       const images = await sbFetchImages(issue.id);
@@ -765,12 +767,29 @@ export default function App() {
       withImages = { ...withImages, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true };
     } catch {}
     setPrintIssue(withImages);
-    // รอให้ React render #print-area และรูปโหลดเสร็จก่อนสั่งพิมพ์
+    // รอให้ React render #print-area และรูปโหลดเสร็จก่อนดำเนินการต่อ
     setTimeout(() => {
       const imgs = document.querySelectorAll("#print-area img");
       const waitAll = Array.from(imgs).map(im => im.complete ? Promise.resolve() : new Promise(r => { im.onload = r; im.onerror = r; }));
       Promise.all(waitAll).then(() => {
-        window.print();
+        if (mode === "save") {
+          // บันทึกเป็นไฟล์ PDF โดยตรง ไม่ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์
+          const el = document.getElementById("print-area");
+          html2pdf().set({
+            margin: 10,
+            filename: (issue.caseNo || "tire-quality") + ".pdf",
+            image: { type: "jpeg", quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+            pagebreak: { mode: ["css", "legacy"] },
+          }).from(el).save().then(() => {
+            showToast("บันทึกไฟล์ PDF สำเร็จ");
+          }).catch(() => {
+            showToast("สร้างไฟล์ PDF ไม่สำเร็จ กรุณาลองใหม่", "err");
+          });
+        } else {
+          window.print();
+        }
       });
     }, 100);
   };
@@ -1330,10 +1349,13 @@ export default function App() {
               <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); setFactoryEditMode(false); setShowEditChoice(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
               <button onClick={() => exportPDF(sel, "save")} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 16px" }}>💾 บันทึกเป็น PDF</button>
               <button onClick={() => exportPDF(sel, "print")} style={{ ...S.btn, background: "transparent", color: "#dc2626", border: "1px solid #dc2626", padding: "8px 16px" }}>🖨️ พิมพ์กระดาษ</button>
-              {!sel.cancelled && !editMode && !factoryEditMode && (
+              {!sel.cancelled && (
                 <div style={{ position: "relative" }}>
-                  <button onClick={() => setShowEditChoice(v => !v)} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "8px 20px" }}>✏️ แก้ไข</button>
-                  {showEditChoice && (
+                  <button onClick={() => !editMode && !factoryEditMode && setShowEditChoice(v => !v)}
+                    style={{ ...S.btn, background: (editMode || factoryEditMode) ? "#334155" : "#f59e0b", color: "#fff", padding: "8px 20px", opacity: (editMode || factoryEditMode) ? 0.5 : 1, cursor: (editMode || factoryEditMode) ? "default" : "pointer" }}>
+                    ✏️ แก้ไข
+                  </button>
+                  {showEditChoice && !editMode && !factoryEditMode && (
                     <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
                       <button onClick={() => { setShowEditChoice(false); startEdit(); }} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "10px 14px", textAlign: "left" }}>📋 แก้ไขข้อมูลฝั่งเซล</button>
                       <button onClick={() => { setShowEditChoice(false); startFactoryEdit(); }} style={{ ...S.btn, background: "#0891b2", color: "#fff", padding: "10px 14px", textAlign: "left" }}>🏭 แก้ไขข้อมูลฝั่งโรงงาน</button>

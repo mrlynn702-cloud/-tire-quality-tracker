@@ -753,8 +753,8 @@ export default function App() {
     showToast("Export Excel สำเร็จ");
   };
 
-  const exportPDF = async (issue) => {
-    showToast("กำลังเตรียมเอกสาร...");
+  const exportPDF = async (issue, mode) => {
+    showToast(mode === "save" ? "กำลังเตรียมไฟล์ PDF... เลือก \"Save as PDF\" ในหน้าต่างที่เปิดขึ้น" : "กำลังเตรียมเอกสาร... เลือกเครื่องพิมพ์ในหน้าต่างที่เปิดขึ้น");
     let withImages = issue;
     try {
       const images = await sbFetchImages(issue.id);
@@ -1328,7 +1328,8 @@ export default function App() {
           <div className="fu">
             <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
               <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); setFactoryEditMode(false); setShowEditChoice(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
-              <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
+              <button onClick={() => exportPDF(sel, "save")} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 16px" }}>💾 บันทึกเป็น PDF</button>
+              <button onClick={() => exportPDF(sel, "print")} style={{ ...S.btn, background: "transparent", color: "#dc2626", border: "1px solid #dc2626", padding: "8px 16px" }}>🖨️ พิมพ์กระดาษ</button>
               {!sel.cancelled && !editMode && !factoryEditMode && (
                 <div style={{ position: "relative" }}>
                   <button onClick={() => setShowEditChoice(v => !v)} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "8px 20px" }}>✏️ แก้ไข</button>
@@ -1373,7 +1374,10 @@ export default function App() {
             {/* EDIT FORM */}
             {editMode && editForm && (
               <Card style={{ marginBottom: 16, borderLeft: "4px solid #f59e0b" }}>
-                <div style={{ fontWeight: 700, color: "#f59e0b", fontSize: 14, marginBottom: 16 }}>✏️ แก้ไขข้อมูลเคส {sel.caseNo}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, color: "#f59e0b", fontSize: 14 }}>✏️ แก้ไขข้อมูลเคส {sel.caseNo}</div>
+                  <button onClick={() => setEditMode(false)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "6px 12px", fontSize: 12 }}>← กลับหน้าสรุปเคส</button>
+                </div>
                 <div className="form-grid">
                   <Field label="แบรนด์"><ButtonGroup value={editForm.brand} onChange={v => setEditForm(p => ({ ...p, brand: v }))} options={BRANDS} getColor={b => BC[b]} /></Field>
                   <TField label="วันที่พบปัญหา" type="date" value={editForm.date} onChange={setEF("date")} />
@@ -1413,7 +1417,7 @@ export default function App() {
                   <TField label="ผู้รายงาน" required value={editForm.reporterName} onChange={setEF("reporterName")} />
                 </div>
                 <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-                  <button onClick={() => setEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>ยกเลิก</button>
+                  <button onClick={() => setEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>← กลับหน้าสรุปเคส</button>
                   <button className="btn-green" onClick={saveEdit} style={{ ...S.btn, flex: 2, color: "#fff", padding: 12, fontSize: 15 }}>💾 บันทึกการแก้ไข</button>
                 </div>
               </Card>
@@ -1422,7 +1426,10 @@ export default function App() {
             {/* FACTORY EDIT FORM */}
             {factoryEditMode && factoryForm && (
               <Card style={{ marginBottom: 16, borderLeft: "4px solid #0891b2" }}>
-                <div style={{ fontWeight: 700, color: "#0891b2", fontSize: 14, marginBottom: 16 }}>🏭 ข้อมูลโรงงาน — เคส {sel.caseNo}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, color: "#0891b2", fontSize: 14 }}>🏭 ข้อมูลโรงงาน — เคส {sel.caseNo}</div>
+                  <button onClick={() => setFactoryEditMode(false)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "6px 12px", fontSize: 12 }}>← กลับหน้าสรุปเคส</button>
+                </div>
                 <div className="form-grid">
                   <SField label="หน่วยงานที่รับผิดชอบ" options={["", ...FACTORY_DEPTS]} value={factoryForm.factoryDept} onChange={setFF("factoryDept")} />
                   <TField label="ผู้รับผิดชอบ" value={factoryForm.factoryResponsible} onChange={setFF("factoryResponsible")} />
@@ -1476,7 +1483,7 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-                  <button onClick={() => setFactoryEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>ยกเลิก</button>
+                  <button onClick={() => setFactoryEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>← กลับหน้าสรุปเคส</button>
                   <button className="btn-green" onClick={saveFactoryEdit} style={{ ...S.btn, flex: 2, color: "#fff", padding: 12, fontSize: 15 }}>💾 บันทึกข้อมูลโรงงาน</button>
                 </div>
               </Card>

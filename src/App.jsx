@@ -173,8 +173,6 @@ const CSS = `
   .nav-label-full { display: inline; }
   .nav-label-short { display: none; }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
-  .status-full { display: inline; }
-  .status-short { display: none; }
 
   @media (max-width: 720px) {
     .wrap { padding: 14px; }
@@ -195,8 +193,6 @@ const CSS = `
     .stat-card-pad { padding: 14px !important; }
     .detail-logo { height: 40px !important; }
     .detail-caseno { font-size: 20px !important; }
-    .status-full { display: none; }
-    .status-short { display: inline; }
   }
 
   /* ---- การพิมพ์ PDF ในหน้าเดียวกับแอพ ---- */
@@ -976,14 +972,6 @@ export default function App() {
     }
   };
 
-  // ข้อความสถานะสำหรับแสดงในตารางรายการ
-  const factoryStatusLabel = (issue) => {
-    if (!issue.factoryDept && !issue.factoryClosed) return null;
-    if (issue.factoryClosed) return "✅ ปิดเคสแล้ว";
-    if (issue.factoryDept) return "🔧 " + issue.factoryDept + " รับยางแล้ว กำลังดำเนินการแก้ไข";
-    return null;
-  };
-
   const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonth("ทั้งปี"); };
 
   return (
@@ -1314,19 +1302,15 @@ export default function App() {
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.productType}</td>
                             <td onClick={cellClick} style={cellStyle({})}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
                             <td onClick={cellClick} style={cellStyle({ color: "#e2e8f0", fontSize: 12 })}>{(issue.issueTypes || []).join(", ")}</td>
-                            <td onClick={cellClick} style={cellStyle({ fontSize: 11, whiteSpace: "nowrap" })}>
+                            <td onClick={cellClick} style={cellStyle({ fontSize: 12, whiteSpace: "nowrap" })}>
                               {isCancelled ? "-" : (() => {
-                                const label = factoryStatusLabel(issue);
-                                if (!label) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
-                                const color = issue.factoryClosed ? "#22c55e" : "#0891b2";
+                                if (!issue.factoryDept && !issue.factoryClosed) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
                                 const dotColor = issue.factoryClosed ? "#ef4444" : "#22c55e";
                                 return (
-                                  <>
-                                    <span className="status-full" style={{ color, fontWeight: 600 }}>{label}</span>
-                                    <span className="status-short" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={issue.factoryClosed ? "ปิดเคส" : "กำลังดำเนินการ"}>
-                                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
-                                    </span>
-                                  </>
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={issue.factoryClosed ? "ปิดเคส" : "กำลังดำเนินการ"}>
+                                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
+                                    <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{issue.factoryDept || "-"}</span>
+                                  </span>
                                 );
                               })()}
                             </td>

@@ -175,24 +175,44 @@ const CSS = `
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
 
   @media (max-width: 720px) {
-    .wrap { padding: 14px; }
-    .stat-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    body { font-size: 15px; }
+    .wrap { padding: 12px; }
+    .stat-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
     .chart-grid { grid-template-columns: 1fr; gap: 12px; }
-    .filter-row { flex-direction: column; width: 100%; }
-    .filter-row input, .filter-row select { width: 100% !important; }
-    .form-grid { grid-template-columns: 1fr; }
-    .list-filter-grid { grid-template-columns: 1fr 1fr; }
-    .detail-grid { grid-template-columns: 1fr; }
+    .filter-row { flex-direction: column; width: 100%; gap: 8px; }
+    .filter-row input, .filter-row select { width: 100% !important; min-height: 44px; font-size: 15px !important; }
+    .form-grid { grid-template-columns: 1fr; gap: 10px; }
+    .list-filter-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .detail-grid { grid-template-columns: 1fr; gap: 12px; }
     .hide-mobile { display: none; }
     .nav-label-full { display: none; }
     .nav-label-short { display: inline; }
-    .header-inner { height: 56px !important; }
-    .dash-head { flex-direction: column; align-items: stretch !important; }
-    h2.page-title { font-size: 19px !important; }
-    .stat-value { font-size: 24px !important; }
-    .stat-card-pad { padding: 14px !important; }
-    .detail-logo { height: 40px !important; }
-    .detail-caseno { font-size: 20px !important; }
+    .header-inner { height: 52px !important; }
+    .dash-head { flex-direction: column; align-items: stretch !important; gap: 12px !important; }
+    h2.page-title { font-size: 18px !important; }
+    .stat-value { font-size: 22px !important; }
+    .stat-card-pad { padding: 12px !important; }
+    .detail-logo { height: 36px !important; }
+    .detail-caseno { font-size: 18px !important; }
+
+    /* การ์ดและปุ่มบนมือถือ: แตะง่ายขึ้น ระยะห่างกระชับขึ้น */
+    button { min-height: 40px; }
+    .mobile-card-pad { padding: 14px !important; }
+    .mobile-toolbar { gap: 8px !important; }
+    .mobile-toolbar > button, .mobile-toolbar > div { flex: 1 1 auto; }
+    .mobile-full { width: 100% !important; }
+    .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
+    .mobile-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .mobile-text-sm { font-size: 13px !important; }
+    .mobile-gap-sm { gap: 8px !important; }
+    .mobile-hide { display: none !important; }
+  }
+
+  @media (max-width: 480px) {
+    .wrap { padding: 10px; }
+    h2.page-title { font-size: 16px !important; }
+    .app-title-text { display: none; }
+    .issue-type-grid { grid-template-columns: 1fr !important; }
   }
 
   /* ---- การพิมพ์ PDF ในหน้าเดียวกับแอพ ---- */
@@ -213,7 +233,7 @@ const S = {
   inp: { background: "#0f1117", border: "1px solid #2d3148", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", width: "100%", fontSize: 14 },
   btn: { cursor: "pointer", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600 },
   lbl: { fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 6 },
-  hdr: { background: "#1a1d27", borderBottom: "1px solid #2d3148", padding: "0 24px" },
+  hdr: { background: "#1a1d27", borderBottom: "1px solid #2d3148", padding: "0 16px" },
   hdrIn: { maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 },
   main: { maxWidth: 1200, margin: "0 auto", padding: 24 },
   secTitle: { fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 },
@@ -273,9 +293,9 @@ const Badge = ({ children, bg, color }) => (
 );
 
 const StatCard = ({ icon, value, label, color }) => (
-  <div style={{ ...S.card, borderLeft: "4px solid " + color, ...(icon ? {} : { padding: 20, textAlign: "center" }) }}>
+  <div className="stat-card-pad" style={{ ...S.card, borderLeft: "4px solid " + color, ...(icon ? {} : { padding: 20, textAlign: "center" }) }}>
     {icon && <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>}
-    <div style={{ fontSize: icon ? 32 : 36, fontWeight: 700, color }}>{value}</div>
+    <div className="stat-value" style={{ fontSize: icon ? 32 : 36, fontWeight: 700, color }}>{value}</div>
     <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{label}</div>
   </div>
 );
@@ -992,9 +1012,9 @@ export default function App() {
 
       <div style={S.hdr}>
         <div className="header-inner" style={S.hdrIn}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="app-title-block" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <img src="/deestone-logo.png" alt="Deestone" style={{ height: 30, width: "auto" }} />
-            <div>
+            <div className="app-title-text">
               <div style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9" }}>Tire Quality Tracker</div>
               <div style={{ fontSize: 11, color: "#64748b" }}>Deestone &amp; Bluhorse</div>
             </div>
@@ -1110,7 +1130,7 @@ export default function App() {
         {view === "form" && !previewMode && (
           <div className="fu" style={{ maxWidth: 800, margin: "0 auto" }}>
             <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>บันทึกปัญหาคุณภาพ</h2>
+              <h2 className="page-title" style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>บันทึกปัญหาคุณภาพ</h2>
               <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>กรอกข้อมูลให้ครบ * = จำเป็น</p>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1132,7 +1152,7 @@ export default function App() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div>
                     <label style={S.lbl}>ประเภทปัญหา <span style={{ color: "#ef4444" }}>*</span> <span style={{ color: "#64748b", fontSize: 11 }}>(เลือกได้มากกว่า 1)</span></label>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+                    <div className="issue-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
                       {issueTypesFor(form.productType).map(t => {
                         const checked = form.issueTypes.includes(t);
                         return (
@@ -1236,16 +1256,16 @@ export default function App() {
         {/* LIST */}
         {view === "list" && !sel && (
           <div className="fu">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+            <div className="mobile-stack" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
               <div>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>รายการปัญหาทั้งหมด</h2>
+                <h2 className="page-title" style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>รายการปัญหาทั้งหมด</h2>
                 <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {listItems.length} รายการ{selectedIds.size > 0 ? " • เลือกอยู่ " + selectedIds.size + " รายการ" : ""}</p>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="mobile-full" style={{ display: "flex", gap: 8 }}>
                 {selectedIds.size > 0 && (
-                  <button onClick={() => deleteMany([...selectedIds])} style={{ ...S.btn, background: "#ef4444", color: "#fff", padding: "10px 16px" }}>🗑️ ลบ {selectedIds.size} รายการ</button>
+                  <button onClick={() => deleteMany([...selectedIds])} style={{ ...S.btn, background: "#ef4444", color: "#fff", padding: "10px 16px", flex: 1 }}>🗑️ ลบ {selectedIds.size} รายการ</button>
                 )}
-                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export Excel</button>
+                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px", flex: 1 }}>📥 Export Excel</button>
               </div>
             </div>
             <Card style={{ marginBottom: 16 }}>
@@ -1265,7 +1285,7 @@ export default function App() {
                         checked={filtered.length > 0 && selectedIds.size === filtered.length}
                         onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(i => i.id)) : new Set())} />
                     </th>
-                    {[["เลขเคส", false], ["วันที่", true], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["สถานะ", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
+                    {[["เลขเคส", false], ["วันที่", true], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true], ["สถานะ", false]].map(([h, hide]) => (
                       <th key={h} className={hide ? "hide-mobile" : ""} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -1302,6 +1322,9 @@ export default function App() {
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.productType}</td>
                             <td onClick={cellClick} style={cellStyle({})}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
                             <td onClick={cellClick} style={cellStyle({ color: "#e2e8f0", fontSize: 12 })}>{(issue.issueTypes || []).join(", ")}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({})}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.province}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.reporterName}</td>
                             <td onClick={cellClick} style={cellStyle({ fontSize: 12, whiteSpace: "nowrap" })}>
                               {isCancelled ? "-" : (() => {
                                 if (!issue.factoryDept && !issue.factoryClosed) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
@@ -1314,9 +1337,6 @@ export default function App() {
                                 );
                               })()}
                             </td>
-                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({})}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
-                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.province}</td>
-                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.reporterName}</td>
                           </tr>
                         );
                       })}
@@ -1329,7 +1349,7 @@ export default function App() {
         {/* DETAIL */}
         {view === "list" && sel && (
           <div className="fu">
-            <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+            <div className="mobile-toolbar" style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
               <button onClick={() => {
                 if (editMode || factoryEditMode) { setEditMode(false); setFactoryEditMode(false); return; }
                 setSel(null); setShowHistory(false); setShowEditChoice(false);
@@ -1345,7 +1365,7 @@ export default function App() {
                     ✏️ แก้ไข
                   </button>
                   {showEditChoice && !editMode && !factoryEditMode && (
-                    <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, width: "max(200px, 60vw)", maxWidth: "calc(100vw - 32px)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
                       <button onClick={() => { setShowEditChoice(false); startEdit(); }} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "10px 14px", textAlign: "left" }}>📋 แก้ไขข้อมูลฝั่งเซล</button>
                       <button onClick={() => { setShowEditChoice(false); startFactoryEdit(); }} style={{ ...S.btn, background: "#0891b2", color: "#fff", padding: "10px 14px", textAlign: "left" }}>🏭 แก้ไขข้อมูลฝั่งโรงงาน</button>
                     </div>
@@ -1400,7 +1420,7 @@ export default function App() {
                   <TField label="เลขที่ใบเคลม" value={editForm.claimRefNo} onChange={setEF("claimRefNo")} />
                   <div style={S.colFull}>
                     <Field label="ประเภทปัญหา *">
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div className="issue-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                         {issueTypesFor(editForm.productType).map(t => {
                           const checked = editForm.issueTypes.includes(t);
                           return (

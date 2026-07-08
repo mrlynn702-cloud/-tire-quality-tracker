@@ -1346,7 +1346,12 @@ export default function App() {
         {view === "list" && sel && (
           <div className="fu">
             <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-              <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); setFactoryEditMode(false); setShowEditChoice(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
+              <button onClick={() => {
+                if (editMode || factoryEditMode) { setEditMode(false); setFactoryEditMode(false); return; }
+                setSel(null); setShowHistory(false); setShowEditChoice(false);
+              }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>
+                {(editMode || factoryEditMode) ? "← กลับหน้าสรุปเคส" : "← กลับรายการ"}
+              </button>
               <button onClick={() => exportPDF(sel, "save")} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 16px" }}>💾 บันทึกเป็น PDF</button>
               <button onClick={() => exportPDF(sel, "print")} style={{ ...S.btn, background: "transparent", color: "#dc2626", border: "1px solid #dc2626", padding: "8px 16px" }}>🖨️ พิมพ์กระดาษ</button>
               {!sel.cancelled && (

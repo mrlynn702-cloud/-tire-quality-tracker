@@ -1300,11 +1300,13 @@ export default function App() {
                                 const label = factoryStatusLabel(issue);
                                 if (!label) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
                                 const color = issue.factoryClosed ? "#22c55e" : "#0891b2";
-                                const shortLabel = issue.factoryClosed ? "✅ ปิดเคส" : "🔧 กำลังดำเนินการ";
+                                const dotColor = issue.factoryClosed ? "#ef4444" : "#22c55e";
                                 return (
                                   <>
                                     <span className="status-full" style={{ color, fontWeight: 600 }}>{label}</span>
-                                    <span className="status-short" style={{ color, fontWeight: 600 }}>{shortLabel}</span>
+                                    <span className="status-short" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={issue.factoryClosed ? "ปิดเคส" : "กำลังดำเนินการ"}>
+                                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
+                                    </span>
                                   </>
                                 );
                               })()}

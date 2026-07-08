@@ -172,6 +172,8 @@ const CSS = `
   .nav-label-full { display: inline; }
   .nav-label-short { display: none; }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .status-full { display: inline; }
+  .status-short { display: none; }
 
   @media (max-width: 720px) {
     .wrap { padding: 14px; }
@@ -192,6 +194,8 @@ const CSS = `
     .stat-card-pad { padding: 14px !important; }
     .detail-logo { height: 40px !important; }
     .detail-caseno { font-size: 20px !important; }
+    .status-full { display: none; }
+    .status-short { display: inline; }
   }
 
   /* ---- การพิมพ์ PDF ในหน้าเดียวกับแอพ ---- */
@@ -393,6 +397,7 @@ const PDSection = ({ title, rows }) => (
 const PrintDoc = ({ issue }) => {
   if (!issue) return null;
   const imgs = (issue.images || []).filter(i => i.url).slice(0, 5);
+  const hasFactory = issue.factoryDept || issue.factoryCause || issue.factoryProblemDetail || issue.factoryPlan || issue.factoryClosed;
   return (
     <div id="print-area">
       <div style={PD.page}>
@@ -429,37 +434,50 @@ const PrintDoc = ({ issue }) => {
             </div>
           </div>
         )}
-        {(issue.factoryDept || issue.factoryCause || issue.factoryProblemDetail || issue.factoryPlan || issue.factoryClosed) && (
-          <div style={PD.sec}>
-            <div style={{ ...PD.sech, display: "flex", justifyContent: "space-between" }}>
-              <span>🏭 ข้อมูลโรงงาน</span>
-              <span>{issue.factoryClosed ? "✅ ปิดเคสแล้ว" : (issue.factoryDept ? "🔧 " + issue.factoryDept + " กำลังดำเนินการ" : "")}</span>
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <tbody>
-                <tr><td style={PD.td1}>หน่วยงานที่รับผิดชอบ</td><td style={PD.td2}>{issue.factoryDept || "-"}</td></tr>
-                <tr><td style={PD.td1}>ผู้รับผิดชอบ</td><td style={PD.td2}>{issue.factoryResponsible || "-"}</td></tr>
-                <tr><td style={PD.td1}>ต้นเหตุของปัญหา</td><td style={PD.td2}>{issue.factoryCause || "-"}{issue.factoryCauseDetail ? " (" + issue.factoryCauseDetail + ")" : ""}</td></tr>
-                <tr><td style={PD.td1}>กำหนดแก้ไขแล้วเสร็จ</td><td style={PD.td2}>{issue.factoryDueDate || "-"}</td></tr>
-                <tr><td style={PD.td1}>บันทึกล่าสุดเมื่อ</td><td style={PD.td2}>{issue.factoryUpdatedAt ? new Date(issue.factoryUpdatedAt).toLocaleString("th-TH") : "-"}</td></tr>
-                <tr><td style={PD.td1}>รายละเอียดปัญหาที่พบ</td><td style={PD.td2}>{issue.factoryProblemDetail || "-"}</td></tr>
-                <tr><td style={PD.td1}>แผนการแก้ไข</td><td style={PD.td2}>{issue.factoryPlan || "-"}</td></tr>
-              </tbody>
-            </table>
-            {((issue.factoryProblemImages || []).length > 0 || (issue.factoryPlanImages || []).length > 0) && (
-              <div style={PD.imgs}>
-                {[...(issue.factoryProblemImages || []), ...(issue.factoryPlanImages || [])].filter(im => im.url).slice(0, 8).map((img, i) => (
-                  <img key={i} src={img.url} alt="" style={PD.img} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
         <div style={PD.ftr}>
           Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: {issue.caseNo}<br />
           &copy; {new Date().getFullYear()} Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W
         </div>
       </div>
+
+      {hasFactory && (
+        <div style={{ ...PD.page, pageBreakBefore: "always" }}>
+          <div style={PD.hdr}>
+            <img src="/deestone-logo.png" alt="Deestone" style={{ height: 46, width: "auto", background: "#fff", borderRadius: 6, padding: "5px 10px" }} />
+            <div style={{ flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3 }}>🏭 ข้อมูลโรงงาน &mdash; เคส {issue.caseNo}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>{issue.caseNo}</div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: issue.factoryClosed ? "#4ade80" : "#67e8f9" }}>
+                {issue.factoryClosed ? "✅ ปิดเคสแล้ว" : (issue.factoryDept ? "🔧 " + issue.factoryDept + " กำลังดำเนินการ" : "")}
+              </div>
+            </div>
+          </div>
+          <PDSection title="ข้อมูลการดำเนินการของโรงงาน" rows={[
+            ["หน่วยงานที่รับผิดชอบ", issue.factoryDept], ["ผู้รับผิดชอบ", issue.factoryResponsible],
+            ["ต้นเหตุของปัญหา", (issue.factoryCause || "-") + (issue.factoryCauseDetail ? " (" + issue.factoryCauseDetail + ")" : "")],
+            ["กำหนดแก้ไขแล้วเสร็จ", issue.factoryDueDate],
+            ["บันทึกล่าสุดเมื่อ", issue.factoryUpdatedAt ? new Date(issue.factoryUpdatedAt).toLocaleString("th-TH") : "-"],
+            ["รายละเอียดปัญหาที่พบ", issue.factoryProblemDetail],
+            ["แผนการแก้ไข", issue.factoryPlan],
+          ]} />
+          {((issue.factoryProblemImages || []).length > 0 || (issue.factoryPlanImages || []).length > 0) && (
+            <div style={PD.sec}>
+              <div style={PD.sech}>ภาพถ่ายประกอบ (โรงงาน)</div>
+              <div style={PD.imgs}>
+                {[...(issue.factoryProblemImages || []), ...(issue.factoryPlanImages || [])].filter(im => im.url).slice(0, 8).map((img, i) => (
+                  <img key={i} src={img.url} alt="" style={PD.img} />
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={PD.ftr}>
+            Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: {issue.caseNo}<br />
+            &copy; {new Date().getFullYear()} Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -511,6 +529,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [factoryEditMode, setFactoryEditMode] = useState(false);
   const [factoryForm, setFactoryForm] = useState(null);
+  const [showEditChoice, setShowEditChoice] = useState(false);
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
 
@@ -1239,7 +1258,7 @@ export default function App() {
                         checked={filtered.length > 0 && selectedIds.size === filtered.length}
                         onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(i => i.id)) : new Set())} />
                     </th>
-                    {[["เลขเคส", false], ["วันที่", false], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["สถานะ", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
+                    {[["เลขเคส", false], ["วันที่", true], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["สถานะ", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
                       <th key={h} className={hide ? "hide-mobile" : ""} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -1271,7 +1290,7 @@ export default function App() {
                               {isCancelled && <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>ยกเลิก</span>}
                             </td>
                             <td onClick={cellClick} style={cellStyle({ color: isCancelled ? "#64748b" : "#6366f1", fontWeight: 700, whiteSpace: "nowrap" })}>{issue.caseNo}</td>
-                            <td onClick={cellClick} style={cellStyle({ color: "#94a3b8", whiteSpace: "nowrap" })}>{issue.date}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8", whiteSpace: "nowrap" })}>{issue.date}</td>
                             <td onClick={cellClick} style={cellStyle({})}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.productType}</td>
                             <td onClick={cellClick} style={cellStyle({})}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
@@ -1280,7 +1299,14 @@ export default function App() {
                               {isCancelled ? "-" : (() => {
                                 const label = factoryStatusLabel(issue);
                                 if (!label) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
-                                return <span style={{ color: issue.factoryClosed ? "#22c55e" : "#0891b2", fontWeight: 600 }}>{label}</span>;
+                                const color = issue.factoryClosed ? "#22c55e" : "#0891b2";
+                                const shortLabel = issue.factoryClosed ? "✅ ปิดเคส" : "🔧 กำลังดำเนินการ";
+                                return (
+                                  <>
+                                    <span className="status-full" style={{ color, fontWeight: 600 }}>{label}</span>
+                                    <span className="status-short" style={{ color, fontWeight: 600 }}>{shortLabel}</span>
+                                  </>
+                                );
                               })()}
                             </td>
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({})}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
@@ -1299,10 +1325,19 @@ export default function App() {
         {view === "list" && sel && (
           <div className="fu">
             <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-              <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); setFactoryEditMode(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
+              <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); setFactoryEditMode(false); setShowEditChoice(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
               <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
-              {!sel.cancelled && !editMode && <button onClick={startEdit} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "8px 20px" }}>✏️ แก้ไข</button>}
-              {!sel.cancelled && !factoryEditMode && <button onClick={startFactoryEdit} style={{ ...S.btn, background: "#0891b2", color: "#fff", padding: "8px 20px" }}>🏭 ข้อมูลโรงงาน</button>}
+              {!sel.cancelled && !editMode && !factoryEditMode && (
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setShowEditChoice(v => !v)} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "8px 20px" }}>✏️ แก้ไข</button>
+                  {showEditChoice && (
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                      <button onClick={() => { setShowEditChoice(false); startEdit(); }} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "10px 14px", textAlign: "left" }}>📋 แก้ไขข้อมูลฝั่งเซล</button>
+                      <button onClick={() => { setShowEditChoice(false); startFactoryEdit(); }} style={{ ...S.btn, background: "#0891b2", color: "#fff", padding: "10px 14px", textAlign: "left" }}>🏭 แก้ไขข้อมูลฝั่งโรงงาน</button>
+                    </div>
+                  )}
+                </div>
+              )}
               {!sel.cancelled && <button onClick={loadHistory} style={{ ...S.btn, background: showHistory ? "#6366f1" : "transparent", color: showHistory ? "#fff" : "#94a3b8", border: "1px solid " + (showHistory ? "#6366f1" : "#2d3148"), padding: "8px 20px" }}>🕐 ประวัติการแก้ไข</button>}
               {!sel.cancelled && <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ยกเลิกเคส</button>}
               {sel.cancelled && <span style={{ marginLeft: "auto", color: "#ef4444", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>⛔ เคสนี้ถูกยกเลิกแล้ว</span>}

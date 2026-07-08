@@ -1328,7 +1328,7 @@ export default function App() {
                             <td onClick={cellClick} style={cellStyle({ fontSize: 12, whiteSpace: "nowrap" })}>
                               {isCancelled ? "-" : (() => {
                                 if (!issue.factoryDept && !issue.factoryClosed) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
-                                const dotColor = issue.factoryClosed ? "#ef4444" : "#22c55e";
+                                const dotColor = issue.factoryClosed ? "#22c55e" : "#ef4444";
                                 return (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={issue.factoryClosed ? "ปิดเคส" : "กำลังดำเนินการ"}>
                                     <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />

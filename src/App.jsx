@@ -21,7 +21,7 @@ const sbFetch = async (method, body) => {
 };
 
 // โหลดรายการแบบเร็ว: ไม่ดึงคอลัมน์ images (รูปภาพ) เพื่อให้เปิดแอพเร็วขึ้น
-const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province,cancelled";
+const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province,cancelled,factory_dept,factory_cause,factory_cause_detail,factory_problem_detail,factory_plan,factory_due_date,factory_responsible,factory_closed";
 const sbFetchList = async () => {
   const url = SUPABASE_URL + "/rest/v1/issues?select=" + LIST_COLUMNS + "&order=created_at.desc";
   const res = await fetch(url, { headers: sbHeaders() });
@@ -46,6 +46,18 @@ const sbFetchImages = async (id) => {
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return (data[0] && data[0].images) || [];
+};
+
+// โหลดรูปภาพส่วนโรงงาน (รายละเอียดปัญหา + แผนการแก้ไข)
+const sbFetchFactoryImages = async (id) => {
+  const url = SUPABASE_URL + "/rest/v1/issues?id=eq." + id + "&select=factory_problem_images,factory_plan_images";
+  const res = await fetch(url, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return {
+    factoryProblemImages: (data[0] && data[0].factory_problem_images) || [],
+    factoryPlanImages: (data[0] && data[0].factory_plan_images) || [],
+  };
 };
 
 // บันทึก snapshot ก่อนแก้ไข (สำหรับ version history)
@@ -114,6 +126,8 @@ const CLAIM_TYPES = ["New Defective", "Claim"];
 const SHOP_TIERS = ["ดิสทริบิวเตอร์", "โฮลเซลล์", "ร้านค้าช่วง", "ร้านช่าง"];
 const NEEDS_DIST = ["ร้านค้าช่วง", "ร้านช่าง"];
 const PROVINCES = ["กรุงเทพมหานคร","กระบี่","กาญจนบุรี","กาฬสินธุ์","กำแพงเพชร","ขอนแก่น","จันทบุรี","ฉะเชิงเทรา","ชลบุรี","ชัยนาท","ชัยภูมิ","ชุมพร","เชียงราย","เชียงใหม่","ตรัง","ตราด","ตาก","นครนายก","นครปฐม","นครพนม","นครราชสีมา","นครศรีธรรมราช","นครสวรรค์","นนทบุรี","นราธิวาส","น่าน","บึงกาฬ","บุรีรัมย์","ปทุมธานี","ประจวบคีรีขันธ์","ปราจีนบุรี","ปัตตานี","พระนครศรีอยุธยา","พะเยา","พังงา","พัทลุง","พิจิตร","พิษณุโลก","เพชรบุรี","เพชรบูรณ์","แพร่","ภูเก็ต","มหาสารคาม","มุกดาหาร","แม่ฮ่องสอน","ยโสธร","ยะลา","ร้อยเอ็ด","ระนอง","ระยอง","ราชบุรี","ลพบุรี","ลำปาง","ลำพูน","เลย","ศรีสะเกษ","สกลนคร","สงขลา","สตูล","สมุทรปราการ","สมุทรสงคราม","สมุทรสาคร","สระแก้ว","สระบุรี","สิงห์บุรี","สุโขทัย","สุพรรณบุรี","สุราษฎร์ธานี","สุรินทร์","หนองคาย","หนองบัวลำภู","อ่างทอง","อำนาจเจริญ","อุดรธานี","อุตรดิตถ์","อุทัยธานี","อุบลราชธานี"];
+const FACTORY_DEPTS = ["DRB", "DSI"];
+const FACTORY_CAUSES = ["ขนส่ง", "การผลิต", "จัดเก็บ", "ผู้ใช้งาน", "อื่นๆ"];
 const BC = { Deestone: "#e63946", Bluhorse: "#1d4ed8" };
 
 function initForm() {
@@ -415,6 +429,31 @@ const PrintDoc = ({ issue }) => {
             </div>
           </div>
         )}
+        {(issue.factoryDept || issue.factoryCause || issue.factoryProblemDetail || issue.factoryPlan || issue.factoryClosed) && (
+          <div style={PD.sec}>
+            <div style={{ ...PD.sech, display: "flex", justifyContent: "space-between" }}>
+              <span>🏭 ข้อมูลโรงงาน</span>
+              <span>{issue.factoryClosed ? "✅ ปิดเคสแล้ว" : (issue.factoryDept ? "🔧 " + issue.factoryDept + " กำลังดำเนินการ" : "")}</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <tbody>
+                <tr><td style={PD.td1}>หน่วยงานที่รับผิดชอบ</td><td style={PD.td2}>{issue.factoryDept || "-"}</td></tr>
+                <tr><td style={PD.td1}>ผู้รับผิดชอบ</td><td style={PD.td2}>{issue.factoryResponsible || "-"}</td></tr>
+                <tr><td style={PD.td1}>ต้นเหตุของปัญหา</td><td style={PD.td2}>{issue.factoryCause || "-"}{issue.factoryCauseDetail ? " (" + issue.factoryCauseDetail + ")" : ""}</td></tr>
+                <tr><td style={PD.td1}>กำหนดแก้ไขแล้วเสร็จ</td><td style={PD.td2}>{issue.factoryDueDate || "-"}</td></tr>
+                <tr><td style={PD.td1}>รายละเอียดปัญหาที่พบ</td><td style={PD.td2}>{issue.factoryProblemDetail || "-"}</td></tr>
+                <tr><td style={PD.td1}>แผนการแก้ไข</td><td style={PD.td2}>{issue.factoryPlan || "-"}</td></tr>
+              </tbody>
+            </table>
+            {((issue.factoryProblemImages || []).length > 0 || (issue.factoryPlanImages || []).length > 0) && (
+              <div style={PD.imgs}>
+                {[...(issue.factoryProblemImages || []), ...(issue.factoryPlanImages || [])].filter(im => im.url).slice(0, 8).map((img, i) => (
+                  <img key={i} src={img.url} alt="" style={PD.img} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div style={PD.ftr}>
           Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: {issue.caseNo}<br />
           &copy; {new Date().getFullYear()} Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W
@@ -469,6 +508,8 @@ export default function App() {
   const [editForm, setEditForm] = useState(null);
   const [historyData, setHistoryData] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [factoryEditMode, setFactoryEditMode] = useState(false);
+  const [factoryForm, setFactoryForm] = useState(null);
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
 
@@ -488,7 +529,13 @@ export default function App() {
         tireModel: r.tire_model, tireSize: r.tire_size, tireWeek: r.tire_week,
         issueTypes: r.issue_types || (r.issue_type ? [r.issue_type] : []), issueDetail: r.issue_detail,
         reporterName: r.reporter_name, shopName: r.shop_name, shopTier: r.shop_tier,
-        distributorName: r.distributor_name, province: r.province, cancelled: r.cancelled || false, images: [], imagesLoaded: false,
+        distributorName: r.distributor_name, province: r.province, cancelled: r.cancelled || false,
+        factoryDept: r.factory_dept || "", factoryCause: r.factory_cause || "", factoryCauseDetail: r.factory_cause_detail || "",
+        factoryProblemDetail: r.factory_problem_detail || "", factoryPlan: r.factory_plan || "",
+        factoryDueDate: r.factory_due_date || "", factoryResponsible: r.factory_responsible || "",
+        factoryClosed: r.factory_closed || false,
+        factoryProblemImages: [], factoryPlanImages: [], factoryImagesLoaded: false,
+        images: [], imagesLoaded: false,
       }));
       setIssues(mapped);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -691,7 +738,11 @@ export default function App() {
     let withImages = issue;
     try {
       const images = await sbFetchImages(issue.id);
-      withImages = { ...issue, images, imagesLoaded: true };
+      withImages = { ...withImages, images, imagesLoaded: true };
+    } catch {}
+    try {
+      const { factoryProblemImages, factoryPlanImages } = await sbFetchFactoryImages(issue.id);
+      withImages = { ...withImages, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true };
     } catch {}
     setPrintIssue(withImages);
     // รอให้ React render #print-area และรูปโหลดเสร็จก่อนสั่งพิมพ์
@@ -723,10 +774,17 @@ export default function App() {
     setSel(issue);
     setEditMode(false);
     setShowHistory(false);
+    setFactoryEditMode(false);
     if (!issue.imagesLoaded) {
       sbFetchImages(issue.id).then(images => {
         setSel(s => (s && s.id === issue.id) ? { ...s, images, imagesLoaded: true } : s);
         setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
+      }).catch(() => {});
+    }
+    if (!issue.factoryImagesLoaded) {
+      sbFetchFactoryImages(issue.id).then(({ factoryProblemImages, factoryPlanImages }) => {
+        setSel(s => (s && s.id === issue.id) ? { ...s, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true } : s);
+        setIssues(p => p.map(i => i.id === issue.id ? { ...i, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true } : i));
       }).catch(() => {});
     }
   };
@@ -805,6 +863,84 @@ export default function App() {
     } catch {
       showToast("โหลดประวัติไม่สำเร็จ", "err");
     }
+  };
+
+  // ---- ข้อมูลโรงงาน ----
+  const startFactoryEdit = () => {
+    setFactoryForm({
+      factoryDept: sel.factoryDept || "", factoryCause: sel.factoryCause || "", factoryCauseDetail: sel.factoryCauseDetail || "",
+      factoryProblemDetail: sel.factoryProblemDetail || "", factoryProblemImages: sel.factoryProblemImages || [],
+      factoryPlan: sel.factoryPlan || "", factoryPlanImages: sel.factoryPlanImages || [],
+      factoryDueDate: sel.factoryDueDate || "", factoryResponsible: sel.factoryResponsible || "",
+      factoryClosed: sel.factoryClosed || false,
+    });
+    setFactoryEditMode(true);
+    setEditMode(false);
+    setShowHistory(false);
+  };
+
+  const setFF = (key) => (e) => setFactoryForm(p => ({ ...p, [key]: e.target.value }));
+
+  const addFactoryFiles = (key) => (e) => {
+    const files = Array.from(e.target.files);
+    Promise.all(files.map(async (f) => ({
+      name: f.name.replace(/\.\w+$/, "") + ".jpg",
+      url: await compressImage(f, 1600, 0.8),
+    }))).then(res => setFactoryForm(p => ({ ...p, [key]: [...p[key], ...res] })));
+  };
+
+  const removeFactoryImage = (key, idx) => setFactoryForm(p => ({ ...p, [key]: p[key].filter((_, j) => j !== idx) }));
+
+  const saveFactoryEdit = async () => {
+    showToast("กำลังอัปโหลดรูป...");
+    try {
+      const uploadImgs = async (list) => Promise.all(list.map(async (img) => {
+        if (img.url && img.url.startsWith("data:")) return { name: img.name, url: await sbUploadImage(img.url, img.name) };
+        return img;
+      }));
+      const problemImages = await uploadImgs(factoryForm.factoryProblemImages);
+      const planImages = await uploadImgs(factoryForm.factoryPlanImages);
+
+      // บันทึก snapshot ก่อนแก้ไข (สำหรับประวัติ)
+      const snapshot = { ...sel };
+      delete snapshot.images;
+      delete snapshot.imagesLoaded;
+      delete snapshot.factoryProblemImages;
+      delete snapshot.factoryPlanImages;
+      delete snapshot.factoryImagesLoaded;
+      await sbSaveHistory(sel.id, snapshot, factoryForm.factoryResponsible || sel.reporterName);
+
+      const payload = {
+        factory_dept: factoryForm.factoryDept, factory_cause: factoryForm.factoryCause,
+        factory_cause_detail: factoryForm.factoryCauseDetail, factory_problem_detail: factoryForm.factoryProblemDetail,
+        factory_problem_images: problemImages, factory_plan: factoryForm.factoryPlan,
+        factory_plan_images: planImages, factory_due_date: factoryForm.factoryDueDate || null,
+        factory_responsible: factoryForm.factoryResponsible, factory_closed: factoryForm.factoryClosed,
+      };
+      await sbUpdate(sel.id, payload);
+      const updated = {
+        ...sel, factoryDept: factoryForm.factoryDept, factoryCause: factoryForm.factoryCause,
+        factoryCauseDetail: factoryForm.factoryCauseDetail, factoryProblemDetail: factoryForm.factoryProblemDetail,
+        factoryProblemImages: problemImages, factoryPlan: factoryForm.factoryPlan,
+        factoryPlanImages: planImages, factoryDueDate: factoryForm.factoryDueDate,
+        factoryResponsible: factoryForm.factoryResponsible, factoryClosed: factoryForm.factoryClosed,
+        factoryImagesLoaded: true,
+      };
+      setSel(updated);
+      setIssues(p => p.map(i => i.id === sel.id ? updated : i));
+      setFactoryEditMode(false);
+      showToast("บันทึกข้อมูลโรงงานสำเร็จ");
+    } catch {
+      showToast("บันทึกไม่สำเร็จ กรุณาลองใหม่", "err");
+    }
+  };
+
+  // ข้อความสถานะสำหรับแสดงในตารางรายการ
+  const factoryStatusLabel = (issue) => {
+    if (!issue.factoryDept && !issue.factoryClosed) return null;
+    if (issue.factoryClosed) return "✅ ปิดเคสแล้ว";
+    if (issue.factoryDept) return "🔧 " + issue.factoryDept + " รับยางแล้ว กำลังดำเนินการแก้ไข";
+    return null;
   };
 
   const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonth("ทั้งปี"); };
@@ -1100,14 +1236,14 @@ export default function App() {
                         checked={filtered.length > 0 && selectedIds.size === filtered.length}
                         onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(i => i.id)) : new Set())} />
                     </th>
-                    {[["เลขเคส", false], ["วันที่", false], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
+                    {[["เลขเคส", false], ["วันที่", false], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["สถานะ", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
                       <th key={h} className={hide ? "hide-mobile" : ""} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {listItems.length === 0
-                    ? <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
+                    ? <tr><td colSpan={11} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
                     : listItems.map((issue, i) => {
                         const isCancelled = issue.cancelled;
                         const rowStyle = {
@@ -1137,6 +1273,13 @@ export default function App() {
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.productType}</td>
                             <td onClick={cellClick} style={cellStyle({})}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
                             <td onClick={cellClick} style={cellStyle({ color: "#e2e8f0", fontSize: 12 })}>{(issue.issueTypes || []).join(", ")}</td>
+                            <td onClick={cellClick} style={cellStyle({ fontSize: 11, whiteSpace: "nowrap" })}>
+                              {isCancelled ? "-" : (() => {
+                                const label = factoryStatusLabel(issue);
+                                if (!label) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
+                                return <span style={{ color: issue.factoryClosed ? "#22c55e" : "#0891b2", fontWeight: 600 }}>{label}</span>;
+                              })()}
+                            </td>
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({})}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.province}</td>
                             <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.reporterName}</td>
@@ -1153,9 +1296,10 @@ export default function App() {
         {view === "list" && sel && (
           <div className="fu">
             <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-              <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
+              <button onClick={() => { setSel(null); setEditMode(false); setShowHistory(false); setFactoryEditMode(false); }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
               <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
               {!sel.cancelled && !editMode && <button onClick={startEdit} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "8px 20px" }}>✏️ แก้ไข</button>}
+              {!sel.cancelled && !factoryEditMode && <button onClick={startFactoryEdit} style={{ ...S.btn, background: "#0891b2", color: "#fff", padding: "8px 20px" }}>🏭 ข้อมูลโรงงาน</button>}
               {!sel.cancelled && <button onClick={loadHistory} style={{ ...S.btn, background: showHistory ? "#6366f1" : "transparent", color: showHistory ? "#fff" : "#94a3b8", border: "1px solid " + (showHistory ? "#6366f1" : "#2d3148"), padding: "8px 20px" }}>🕐 ประวัติการแก้ไข</button>}
               {!sel.cancelled && <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ยกเลิกเคส</button>}
               {sel.cancelled && <span style={{ marginLeft: "auto", color: "#ef4444", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>⛔ เคสนี้ถูกยกเลิกแล้ว</span>}
@@ -1234,6 +1378,70 @@ export default function App() {
                 </div>
               </Card>
             )}
+
+            {/* FACTORY EDIT FORM */}
+            {factoryEditMode && factoryForm && (
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #0891b2" }}>
+                <div style={{ fontWeight: 700, color: "#0891b2", fontSize: 14, marginBottom: 16 }}>🏭 ข้อมูลโรงงาน — เคส {sel.caseNo}</div>
+                <div className="form-grid">
+                  <SField label="หน่วยงานที่รับผิดชอบ" options={["", ...FACTORY_DEPTS]} value={factoryForm.factoryDept} onChange={setFF("factoryDept")} />
+                  <TField label="ผู้รับผิดชอบ" value={factoryForm.factoryResponsible} onChange={setFF("factoryResponsible")} />
+                  <SField label="ต้นเหตุของปัญหา" options={["", ...FACTORY_CAUSES]} value={factoryForm.factoryCause} onChange={setFF("factoryCause")} />
+                  <TField label="รายละเอียดต้นเหตุเพิ่มเติม" placeholder="ระบุรายละเอียด" value={factoryForm.factoryCauseDetail} onChange={setFF("factoryCauseDetail")} />
+                  <TField label="กำหนดวันแก้ไขแล้วเสร็จ" type="date" value={factoryForm.factoryDueDate} onChange={setFF("factoryDueDate")} />
+                  <div />
+
+                  <div style={S.colFull}>
+                    <Field label="รายละเอียดปัญหาที่พบ">
+                      <textarea style={{ ...S.inp, minHeight: 80, resize: "vertical" }} value={factoryForm.factoryProblemDetail} onChange={setFF("factoryProblemDetail")} />
+                    </Field>
+                    <div style={{ marginTop: 8 }}>
+                      <input id="factoryProblemImgInput" type="file" accept="image/*" multiple style={{ display: "none" }} onChange={addFactoryFiles("factoryProblemImages")} />
+                      <button onClick={() => document.getElementById("factoryProblemImgInput").click()} style={{ ...S.btn, background: "#1e293b", color: "#94a3b8", padding: "8px 14px", border: "1.5px dashed #334155" }}>📷 แนบรูป</button>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                        {factoryForm.factoryProblemImages.map((img, i) => (
+                          <div key={i} style={{ position: "relative" }}>
+                            <img src={img.url} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1.5px solid #2d3148" }} />
+                            <button onClick={() => removeFactoryImage("factoryProblemImages", i)} style={{ position: "absolute", top: -6, right: -6, background: "#ef4444", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10 }}>x</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={S.colFull}>
+                    <Field label="แผนการแก้ไข">
+                      <textarea style={{ ...S.inp, minHeight: 80, resize: "vertical" }} value={factoryForm.factoryPlan} onChange={setFF("factoryPlan")} />
+                    </Field>
+                    <div style={{ marginTop: 8 }}>
+                      <input id="factoryPlanImgInput" type="file" accept="image/*" multiple style={{ display: "none" }} onChange={addFactoryFiles("factoryPlanImages")} />
+                      <button onClick={() => document.getElementById("factoryPlanImgInput").click()} style={{ ...S.btn, background: "#1e293b", color: "#94a3b8", padding: "8px 14px", border: "1.5px dashed #334155" }}>📷 แนบรูป</button>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                        {factoryForm.factoryPlanImages.map((img, i) => (
+                          <div key={i} style={{ position: "relative" }}>
+                            <img src={img.url} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1.5px solid #2d3148" }} />
+                            <button onClick={() => removeFactoryImage("factoryPlanImages", i)} style={{ position: "absolute", top: -6, right: -6, background: "#ef4444", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10 }}>x</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={S.colFull}>
+                    <button onClick={() => setFactoryForm(p => ({ ...p, factoryClosed: !p.factoryClosed }))}
+                      style={{ ...S.btn, display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: factoryForm.factoryClosed ? "#16a34a20" : "#0f1117", border: "1.5px solid " + (factoryForm.factoryClosed ? "#16a34a" : "#2d3148"), width: "100%" }}>
+                      <span style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: factoryForm.factoryClosed ? "#16a34a" : "transparent", border: "1.5px solid " + (factoryForm.factoryClosed ? "#16a34a" : "#475569"), color: "#fff", fontSize: 13 }}>{factoryForm.factoryClosed ? "✓" : ""}</span>
+                      <span style={{ color: factoryForm.factoryClosed ? "#22c55e" : "#94a3b8", fontWeight: 600 }}>ปิดเคส</span>
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                  <button onClick={() => setFactoryEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>ยกเลิก</button>
+                  <button className="btn-green" onClick={saveFactoryEdit} style={{ ...S.btn, flex: 2, color: "#fff", padding: 12, fontSize: 15 }}>💾 บันทึกข้อมูลโรงงาน</button>
+                </div>
+              </Card>
+            )}
+
             <div className="detail-grid">
               <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, minWidth: 0, maxWidth: "100%", flexWrap: "wrap", overflow: "hidden" }}>
                 <img src="/deestone-logo.png" alt="Deestone" className="detail-logo" style={{ height: 64, width: "auto", flexShrink: 0, maxWidth: "100%" }} />
@@ -1264,6 +1472,51 @@ export default function App() {
                     ))}
                   </div>
                 </Card>
+              )}
+
+              {(sel.factoryDept || sel.factoryCause || sel.factoryProblemDetail || sel.factoryPlan || sel.factoryClosed) && (
+                <div style={S.colFull}>
+                  <Card style={{ borderLeft: "4px solid #0891b2" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ fontWeight: 700, color: "#0891b2", fontSize: 13, textTransform: "uppercase", letterSpacing: 1 }}>🏭 ข้อมูลโรงงาน</div>
+                      {sel.factoryClosed
+                        ? <Badge bg="#16a34a25" color="#22c55e">✅ ปิดเคสแล้ว</Badge>
+                        : sel.factoryDept && <Badge bg="#0891b225" color="#0891b2">🔧 {sel.factoryDept} กำลังดำเนินการ</Badge>}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 14, marginBottom: 12 }}>
+                      <div><span style={{ color: "#64748b" }}>หน่วยงานที่รับผิดชอบ: </span>{sel.factoryDept || "-"}</div>
+                      <div><span style={{ color: "#64748b" }}>ผู้รับผิดชอบ: </span>{sel.factoryResponsible || "-"}</div>
+                      <div><span style={{ color: "#64748b" }}>ต้นเหตุของปัญหา: </span>{sel.factoryCause || "-"}{sel.factoryCauseDetail ? " (" + sel.factoryCauseDetail + ")" : ""}</div>
+                      <div><span style={{ color: "#64748b" }}>กำหนดแก้ไขเสร็จ: </span>{sel.factoryDueDate || "-"}</div>
+                    </div>
+                    {sel.factoryProblemDetail && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ color: "#64748b", fontSize: 13, marginBottom: 4 }}>รายละเอียดปัญหาที่พบ</div>
+                        <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{sel.factoryProblemDetail}</div>
+                        {sel.factoryImagesLoaded && (sel.factoryProblemImages || []).length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                            {sel.factoryProblemImages.map((img, i) => (
+                              <img key={i} src={img.url} alt="" style={{ width: 90, height: 68, objectFit: "cover", borderRadius: 6, border: "1.5px solid #2d3148", cursor: "pointer" }} onClick={() => window.open(img.url, "_blank")} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {sel.factoryPlan && (
+                      <div>
+                        <div style={{ color: "#64748b", fontSize: 13, marginBottom: 4 }}>แผนการแก้ไข</div>
+                        <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{sel.factoryPlan}</div>
+                        {sel.factoryImagesLoaded && (sel.factoryPlanImages || []).length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                            {sel.factoryPlanImages.map((img, i) => (
+                              <img key={i} src={img.url} alt="" style={{ width: 90, height: 68, objectFit: "cover", borderRadius: 6, border: "1.5px solid #2d3148", cursor: "pointer" }} onClick={() => window.open(img.url, "_blank")} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                </div>
               )}
             </div>
           </div>

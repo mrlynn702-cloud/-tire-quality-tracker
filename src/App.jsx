@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import * as XLSX from "xlsx";
+import html2pdf from "html2pdf.js";
 
 const SUPABASE_URL = "https://xygvrhzvieulmexyjxuv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wCNv0fp4POlUtncwJrug5g_6dNLyXbU";
@@ -20,12 +22,22 @@ const sbFetch = async (method, body) => {
 };
 
 // โหลดรายการแบบเร็ว: ไม่ดึงคอลัมน์ images (รูปภาพ) เพื่อให้เปิดแอพเร็วขึ้น
-const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province";
+const LIST_COLUMNS = "id,case_no,date,claim_date,claim_ref_no,claim_type,brand,product_type,tire_model,tire_size,tire_week,issue_types,issue_type,issue_detail,reporter_name,shop_name,shop_tier,distributor_name,province,cancelled,factory_dept,factory_cause,factory_cause_detail,factory_problem_detail,factory_plan,factory_due_date,factory_responsible,factory_closed,factory_updated_at";
 const sbFetchList = async () => {
   const url = SUPABASE_URL + "/rest/v1/issues?select=" + LIST_COLUMNS + "&order=created_at.desc";
   const res = await fetch(url, { headers: sbHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+};
+
+// Soft delete: ทำเครื่องหมายว่ายกเลิก ไม่ลบออกจากฐานข้อมูล
+const sbCancel = async (id) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, {
+    method: "PATCH",
+    headers: sbHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ cancelled: true }),
+  });
+  if (!res.ok) throw new Error(await res.text());
 };
 
 // โหลดรูปภาพของเคสเดียว (ใช้ตอนเปิดดูรายละเอียด)
@@ -35,6 +47,46 @@ const sbFetchImages = async (id) => {
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return (data[0] && data[0].images) || [];
+};
+
+// โหลดรูปภาพส่วนโรงงาน (รายละเอียดปัญหา + แผนการแก้ไข)
+const sbFetchFactoryImages = async (id) => {
+  const url = SUPABASE_URL + "/rest/v1/issues?id=eq." + id + "&select=factory_problem_images,factory_plan_images";
+  const res = await fetch(url, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return {
+    factoryProblemImages: (data[0] && data[0].factory_problem_images) || [],
+    factoryPlanImages: (data[0] && data[0].factory_plan_images) || [],
+  };
+};
+
+// บันทึก snapshot ก่อนแก้ไข (สำหรับ version history)
+const sbSaveHistory = async (issueId, snapshot, changedBy) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues_history", {
+    method: "POST",
+    headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+    body: JSON.stringify({ issue_id: issueId, snapshot, changed_by: changedBy }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+};
+
+// ดึง history ของเคส
+const sbFetchHistory = async (issueId) => {
+  const url = SUPABASE_URL + "/rest/v1/issues_history?issue_id=eq." + issueId + "&order=changed_at.desc&select=*";
+  const res = await fetch(url, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+};
+
+// อัพเดตข้อมูลเคส
+const sbUpdate = async (id, payload) => {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/issues?id=eq." + id, {
+    method: "PATCH",
+    headers: sbHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
 };
 
 const sbDelete = async (id) => {
@@ -60,6 +112,11 @@ const sbUploadImage = async (dataUrl, fileName) => {
 };
 
 // ---------- constants ----------
+const ADMIN_PASS = "Mrlynn702";
+const requireAdminPass = (action) => {
+  const input = window.prompt("🔒 กรุณาใส่รหัสผ่านหรือติดต่อ Admin เพื่อ" + action);
+  return input === ADMIN_PASS;
+};
 const BRANDS = ["Deestone", "Bluhorse"];
 const PRODUCT_TYPES = ["Tire MC T/T", "Tire MC T/L", "Tire BC", "Tube MC", "Tube BC"];
 const ISSUE_TYPES_TIRE = ["รั่วหน้ายาง", "รั่วแก้มยาง", "แผลแก้มยาง", "แผลหน้ายาง", "บวมไหล่ยาง", "บวมแก้มยาง", "บวมหน้ายาง", "บวมใต้ท้องยาง", "ลวดคด", "สิ่งแปลกปลอมอยู่ในยาง", "แตกร่องดอกยาง", "ยางส่าย", "ยางไม่กลม", "ยางขึ้นขอบยาก", "ยางสกปรก", "อื่นๆ (ระบุในรายละเอียดปัญหา)"];
@@ -70,12 +127,14 @@ const CLAIM_TYPES = ["New Defective", "Claim"];
 const SHOP_TIERS = ["ดิสทริบิวเตอร์", "โฮลเซลล์", "ร้านค้าช่วง", "ร้านช่าง"];
 const NEEDS_DIST = ["ร้านค้าช่วง", "ร้านช่าง"];
 const PROVINCES = ["กรุงเทพมหานคร","กระบี่","กาญจนบุรี","กาฬสินธุ์","กำแพงเพชร","ขอนแก่น","จันทบุรี","ฉะเชิงเทรา","ชลบุรี","ชัยนาท","ชัยภูมิ","ชุมพร","เชียงราย","เชียงใหม่","ตรัง","ตราด","ตาก","นครนายก","นครปฐม","นครพนม","นครราชสีมา","นครศรีธรรมราช","นครสวรรค์","นนทบุรี","นราธิวาส","น่าน","บึงกาฬ","บุรีรัมย์","ปทุมธานี","ประจวบคีรีขันธ์","ปราจีนบุรี","ปัตตานี","พระนครศรีอยุธยา","พะเยา","พังงา","พัทลุง","พิจิตร","พิษณุโลก","เพชรบุรี","เพชรบูรณ์","แพร่","ภูเก็ต","มหาสารคาม","มุกดาหาร","แม่ฮ่องสอน","ยโสธร","ยะลา","ร้อยเอ็ด","ระนอง","ระยอง","ราชบุรี","ลพบุรี","ลำปาง","ลำพูน","เลย","ศรีสะเกษ","สกลนคร","สงขลา","สตูล","สมุทรปราการ","สมุทรสงคราม","สมุทรสาคร","สระแก้ว","สระบุรี","สิงห์บุรี","สุโขทัย","สุพรรณบุรี","สุราษฎร์ธานี","สุรินทร์","หนองคาย","หนองบัวลำภู","อ่างทอง","อำนาจเจริญ","อุดรธานี","อุตรดิตถ์","อุทัยธานี","อุบลราชธานี"];
+const FACTORY_DEPTS = ["DRB", "DSI"];
+const FACTORY_CAUSES = ["ขนส่ง", "การผลิต", "จัดเก็บ", "ผู้ใช้งาน", "อื่นๆ"];
 const BC = { Deestone: "#e63946", Bluhorse: "#1d4ed8" };
 
 function initForm() {
   return {
     date: new Date().toISOString().split("T")[0],
-    claimDate: "", claimRefNo: "", claimType: "New Defective", brand: "Deestone", productType: "Tire MC T/T",
+    claimDate: "", claimRefNo: "", claimType: "Claim", brand: "Deestone", productType: "Tire MC T/T",
     tireModel: "", tireSize: "", issueTypes: [], issueDetail: "",
     reporterName: "", shopName: "", shopTier: "ดิสทริบิวเตอร์",
     distributorName: "", province: "กรุงเทพมหานคร", tireWeek: "", images: [],
@@ -113,35 +172,68 @@ const CSS = `
   .hide-mobile { display: table-cell; }
   .nav-label-full { display: inline; }
   .nav-label-short { display: none; }
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
 
   @media (max-width: 720px) {
-    .wrap { padding: 14px; }
-    .stat-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    body { font-size: 15px; }
+    .wrap { padding: 12px; }
+    .stat-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
     .chart-grid { grid-template-columns: 1fr; gap: 12px; }
-    .filter-row { flex-direction: column; width: 100%; }
-    .filter-row input, .filter-row select { width: 100% !important; }
-    .form-grid { grid-template-columns: 1fr; }
-    .list-filter-grid { grid-template-columns: 1fr 1fr; }
-    .detail-grid { grid-template-columns: 1fr; }
+    .filter-row { flex-direction: column; width: 100%; gap: 8px; }
+    .filter-row input, .filter-row select { width: 100% !important; min-height: 44px; font-size: 15px !important; }
+    .form-grid { grid-template-columns: 1fr; gap: 10px; }
+    .list-filter-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .detail-grid { grid-template-columns: 1fr; gap: 12px; }
     .hide-mobile { display: none; }
     .nav-label-full { display: none; }
     .nav-label-short { display: inline; }
-    .header-inner { height: 56px !important; }
-    .dash-head { flex-direction: column; align-items: stretch !important; }
-    h2.page-title { font-size: 19px !important; }
-    .stat-value { font-size: 24px !important; }
-    .stat-card-pad { padding: 14px !important; }
+    .header-inner { height: 52px !important; }
+    .dash-head { flex-direction: column; align-items: stretch !important; gap: 12px !important; }
+    h2.page-title { font-size: 18px !important; }
+    .stat-value { font-size: 22px !important; }
+    .stat-card-pad { padding: 12px !important; }
+    .detail-logo { height: 36px !important; }
+    .detail-caseno { font-size: 18px !important; }
+
+    /* การ์ดและปุ่มบนมือถือ: แตะง่ายขึ้น ระยะห่างกระชับขึ้น */
+    button { min-height: 40px; }
+    .mobile-card-pad { padding: 14px !important; }
+    .mobile-toolbar { gap: 8px !important; }
+    .mobile-toolbar > button, .mobile-toolbar > div { flex: 1 1 auto; }
+    .mobile-full { width: 100% !important; }
+    .mobile-stack { flex-direction: column !important; align-items: stretch !important; }
+    .mobile-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .mobile-text-sm { font-size: 13px !important; }
+    .mobile-gap-sm { gap: 8px !important; }
+    .mobile-hide { display: none !important; }
+  }
+
+  @media (max-width: 480px) {
+    .wrap { padding: 10px; }
+    h2.page-title { font-size: 16px !important; }
+    .app-title-text { display: none; }
+    .issue-type-grid { grid-template-columns: 1fr !important; }
+  }
+
+  /* ---- การพิมพ์ PDF ในหน้าเดียวกับแอพ ---- */
+  /* ใช้ position:fixed ซ่อนไว้นอกจอแทน display:none เพื่อให้ html2pdf (html2canvas) จับภาพได้ */
+  #print-area { position: fixed; left: -9999px; top: 0; width: 794px; background: #fff; }
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    body * { visibility: hidden; }
+    #print-area, #print-area * { visibility: visible; }
+    #print-area { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
   }
 `;
 
 const S = {
   page: { minHeight: "100vh", background: "#0f1117", color: "#e2e8f0" },
-  card: { background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 12, padding: 20 },
+  card: { background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 12, padding: 20, maxWidth: "100%", overflow: "hidden" },
   inp: { background: "#0f1117", border: "1px solid #2d3148", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", width: "100%", fontSize: 14 },
   btn: { cursor: "pointer", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600 },
   lbl: { fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 6 },
-  hdr: { background: "#1a1d27", borderBottom: "1px solid #2d3148", padding: "0 24px" },
+  hdr: { background: "#1a1d27", borderBottom: "1px solid #2d3148", padding: "0 16px" },
   hdrIn: { maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 },
   main: { maxWidth: 1200, margin: "0 auto", padding: 24 },
   secTitle: { fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 },
@@ -201,9 +293,9 @@ const Badge = ({ children, bg, color }) => (
 );
 
 const StatCard = ({ icon, value, label, color }) => (
-  <div style={{ ...S.card, borderLeft: "4px solid " + color, ...(icon ? {} : { padding: 20, textAlign: "center" }) }}>
+  <div className="stat-card-pad" style={{ ...S.card, borderLeft: "4px solid " + color, ...(icon ? {} : { padding: 20, textAlign: "center" }) }}>
     {icon && <div style={{ fontSize: 22, marginBottom: 8 }}>{icon}</div>}
-    <div style={{ fontSize: icon ? 32 : 36, fontWeight: 700, color }}>{value}</div>
+    <div className="stat-value" style={{ fontSize: icon ? 32 : 36, fontWeight: 700, color }}>{value}</div>
     <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{label}</div>
   </div>
 );
@@ -288,84 +380,125 @@ const BarChart = ({ title, items, color }) => {
   );
 };
 
-// ---------- PDF builder ----------
-function buildPdfHtml(issue) {
-  const row = (lbl, val) => '<tr><td style="padding:8px 12px;color:#64748b;font-size:13px;width:40%;border-bottom:1px solid #f1f5f9;">' + lbl + '</td><td style="padding:8px 12px;font-size:13px;font-weight:500;border-bottom:1px solid #f1f5f9;">' + (val || "-") + '</td></tr>';
-  const imgHTML = (issue.images || []).filter(i => i.url).slice(0, 8).map(img =>
-    '<img src="' + img.url + '" style="width:100%;height:150px;object-fit:cover;border-radius:6px;border:1px solid #ddd;" />'
-  ).join("");
+// ---------- PDF document (render ในหน้าเดียวกับแอพ แล้วใช้ window.print) ----------
+// ใช้ origin เดียวกับแอพ รูปจึงโหลดได้ปกติ ไม่ติด CORS
+const PD = {
+  page: { fontFamily: "sans-serif", color: "#1e293b", fontSize: 14, padding: 24, background: "#fff" },
+  hdr: { background: "#1a1d27", color: "#fff", padding: "20px 26px", borderRadius: 10, marginBottom: 16, display: "flex", alignItems: "center", gap: 18 },
+  cols: { display: "flex", gap: 18 },
+  col: { flex: 1, minWidth: 0 },
+  sec: { marginBottom: 16, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" },
+  sech: { background: "#f8fafc", padding: "8px 14px", fontSize: 12, fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #e2e8f0" },
+  td1: { padding: "8px 14px", fontSize: 13, color: "#64748b", width: "40%", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" },
+  td2: { padding: "8px 14px", fontSize: 13, fontWeight: 500, borderBottom: "1px solid #f1f5f9", wordBreak: "break-word" },
+  imgs: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, padding: 12 },
+  img: { width: "100%", height: 150, objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" },
+  ftr: { marginTop: 18, paddingTop: 18, textAlign: "center", fontSize: 11, color: "#94a3b8", borderTop: "1px solid #e2e8f0" },
+};
 
-  const styleTag = '<style>'
-    + '@page{size:A4;margin:12mm}'
-    + 'html,body{height:100%}'
-    + 'body{font-family:sans-serif;margin:0;padding:24px;color:#1e293b;font-size:14px;display:flex;flex-direction:column;}'
-    + '.hdr{background:#1a1d27;color:#fff;padding:20px 26px;border-radius:10px;margin-bottom:16px}'
-    + '.cols{display:flex;gap:18px}'
-    + '.col{flex:1;min-width:0}'
-    + '.sec{margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}'
-    + '.sech{background:#f8fafc;padding:8px 14px;font-size:12px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0}'
-    + 'table{width:100%;border-collapse:collapse}'
-    + 'td{padding:8px 14px!important;font-size:13px!important;border-bottom:1px solid #f1f5f9}'
-    + '.imgs{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px}'
-    + '.main-content{flex:1}'
-    + '.ftr{margin-top:auto;padding-top:18px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;}'
-    + '@media print{.noprint{display:none!important}body{padding:0}}'
-    + '</style>';
+const PDSection = ({ title, rows }) => (
+  <div style={PD.sec}>
+    <div style={PD.sech}>{title}</div>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <tbody>
+        {rows.map(([k, v]) => (
+          <tr key={k}>
+            <td style={PD.td1}>{k}</td>
+            <td style={PD.td2}>{v || "-"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
 
-  const toolbar = '<div class="noprint" style="position:fixed;top:0;left:0;right:0;background:#1a1d27;padding:12px 24px;display:flex;gap:10px;align-items:center;z-index:9999;">'
-    + '<span style="color:#fff;font-weight:700;font-size:14px;flex:1;">' + issue.caseNo + ' &mdash; ' + issue.tireModel + ' ' + (issue.tireSize || '') + '</span>'
-    + '<button onclick="window.print()" style="background:#16a34a;color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">พิมพ์ / บันทึก PDF</button>'
-    + '<button onclick="window.close()" style="background:#475569;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:14px;cursor:pointer;">ปิด</button>'
-    + '</div><div style="height:56px"></div>'
-    + '<div class="noprint" style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:13px;text-align:center;">เมื่อหน้าพิมพ์เปิดขึ้น เลือก "ปลายทาง / Destination" เป็น <b>Save as PDF</b> แล้วกด Save เพื่อบันทึกไฟล์ลงเครื่อง — จัดให้พอดี 1 หน้าแล้ว</div>';
+const PrintDoc = ({ issue }) => {
+  if (!issue) return null;
+  const imgs = (issue.images || []).filter(i => i.url).slice(0, 5);
+  const hasFactory = issue.factoryDept || issue.factoryCause || issue.factoryProblemDetail || issue.factoryPlan || issue.factoryClosed;
+  return (
+    <div id="print-area">
+      <div style={PD.page}>
+        <div style={PD.hdr}>
+          <img src="/deestone-logo.png" alt="Deestone" style={{ height: 46, width: "auto", background: "#fff", borderRadius: 6, padding: "5px 10px" }} />
+          <div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3 }}>รายงานปัญหาคุณภาพยาง</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>{issue.caseNo}</div>
+          </div>
+        </div>
+        <div style={PD.cols}>
+          <div style={PD.col}>
+            <PDSection title="ข้อมูลพื้นฐาน" rows={[
+              ["แบรนด์", issue.brand], ["ประเภทสินค้า", issue.productType], ["วันที่รับยางเคลม", issue.claimDate],
+              ["รุ่นยาง", issue.tireModel], ["ขนาดยาง", issue.tireSize], ["สัปดาห์ยาง / Serial", issue.tireWeek],
+            ]} />
+            <PDSection title="ข้อมูลปัญหา" rows={[
+              ["ประเภทปัญหา", (issue.issueTypes || []).join(", ")], ["รายละเอียดปัญหา", issue.issueDetail],
+            ]} />
+          </div>
+          <div style={PD.col}>
+            <PDSection title="ข้อมูลร้านค้า" rows={[
+              ["เลขที่ใบเคลม", issue.claimRefNo], ["ประเภทยางเคลม", issue.claimType], ["ชื่อร้านค้า", issue.shopName],
+              ["ประเภทร้าน", issue.shopTier], ["ร้านตัวแทนที่รับมา", issue.distributorName],
+              ["จังหวัดที่พบปัญหา", issue.province], ["วันที่พบปัญหา", issue.date], ["ผู้รายงาน", issue.reporterName],
+            ]} />
+          </div>
+        </div>
+        {imgs.length > 0 && (
+          <div style={PD.sec}>
+            <div style={PD.sech}>ภาพถ่าย</div>
+            <div style={PD.imgs}>
+              {imgs.map((img, i) => <img key={i} src={img.url} alt="" style={PD.img} />)}
+            </div>
+          </div>
+        )}
+        <div style={PD.ftr}>
+          Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: {issue.caseNo}<br />
+          &copy; {new Date().getFullYear()} Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W
+        </div>
+      </div>
 
-  const logoUrl = window.location.origin + "/deestone-logo.png";
-  const header = '<div class="hdr" style="display:flex;align-items:center;gap:18px;">'
-    + '<img src="' + logoUrl + '" alt="Deestone" style="height:46px;width:auto;background:#fff;border-radius:6px;padding:5px 10px;" />'
-    + '<div>'
-    + '<div style="font-size:11px;color:#94a3b8;margin-bottom:3px;">รายงานปัญหาคุณภาพยาง</div>'
-    + '<div style="font-size:26px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + issue.caseNo + '</div>'
-    + '</div></div>';
-
-  const basicSection = '<div class="sec"><div class="sech">ข้อมูลพื้นฐาน</div><table>'
-    + row("แบรนด์", issue.brand)
-    + row("ประเภทสินค้า", issue.productType)
-    + row("วันที่รับยางเคลม", issue.claimDate)
-    + row("รุ่นยาง", issue.tireModel)
-    + row("ขนาดยาง", issue.tireSize)
-    + row("สัปดาห์ยาง / Serial", issue.tireWeek)
-    + '</table></div>';
-
-  const issueSection = '<div class="sec"><div class="sech">ข้อมูลปัญหา</div><table>'
-    + row("ประเภทปัญหา", (issue.issueTypes || []).join(", "))
-    + row("รายละเอียดปัญหา", issue.issueDetail)
-    + '</table></div>';
-
-  const shopSection = '<div class="sec"><div class="sech">ข้อมูลร้านค้า</div><table>'
-    + row("เลขที่ใบเคลม", issue.claimRefNo)
-    + row("ประเภทยางเคลม", issue.claimType)
-    + row("ชื่อร้านค้า", issue.shopName)
-    + row("ประเภทร้าน", issue.shopTier)
-    + row("ร้านตัวแทนที่รับมา", issue.distributorName)
-    + row("จังหวัดที่พบปัญหา", issue.province)
-    + row("วันที่พบปัญหา", issue.date)
-    + row("ผู้รายงาน", issue.reporterName)
-    + '</table></div>';
-
-  const imagesSection = (issue.images || []).filter(i => i.url).length > 0
-    ? '<div class="sec"><div class="sech">ภาพถ่าย</div><div class="imgs">' + imgHTML + '</div></div>' : '';
-
-  const footer = '<div class="ftr">Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: ' + issue.caseNo
-    + '<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>';
-
-  const body = '<div class="cols">'
-    + '<div class="col">' + basicSection + issueSection + '</div>'
-    + '<div class="col">' + shopSection + '</div>'
-    + '</div>' + imagesSection + footer;
-
-  return '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + issue.caseNo + '</title>' + styleTag + '</head><body>'
-    + toolbar + header + body + '</body></html>';
-}
+      {hasFactory && (
+        <div style={{ ...PD.page, pageBreakBefore: "always" }}>
+          <div style={PD.hdr}>
+            <img src="/deestone-logo.png" alt="Deestone" style={{ height: 46, width: "auto", background: "#fff", borderRadius: 6, padding: "5px 10px" }} />
+            <div style={{ flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3 }}>🏭 ข้อมูลโรงงาน &mdash; เคส {issue.caseNo}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>{issue.caseNo}</div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: issue.factoryClosed ? "#4ade80" : "#67e8f9" }}>
+                {issue.factoryClosed ? "✅ ปิดเคสแล้ว" : (issue.factoryDept ? "🔧 " + issue.factoryDept + " กำลังดำเนินการ" : "")}
+              </div>
+            </div>
+          </div>
+          <PDSection title="ข้อมูลการดำเนินการของโรงงาน" rows={[
+            ["หน่วยงานที่รับผิดชอบ", issue.factoryDept], ["ผู้รับผิดชอบ", issue.factoryResponsible],
+            ["ต้นเหตุของปัญหา", (issue.factoryCause || "-") + (issue.factoryCauseDetail ? " (" + issue.factoryCauseDetail + ")" : "")],
+            ["กำหนดแก้ไขแล้วเสร็จ", issue.factoryDueDate],
+            ["บันทึกล่าสุดเมื่อ", issue.factoryUpdatedAt ? new Date(issue.factoryUpdatedAt).toLocaleString("th-TH") : "-"],
+            ["รายละเอียดปัญหาที่พบ", issue.factoryProblemDetail],
+            ["แผนการแก้ไข", issue.factoryPlan],
+          ]} />
+          {((issue.factoryProblemImages || []).length > 0 || (issue.factoryPlanImages || []).length > 0) && (
+            <div style={PD.sec}>
+              <div style={PD.sech}>ภาพถ่ายประกอบ (โรงงาน)</div>
+              <div style={PD.imgs}>
+                {[...(issue.factoryProblemImages || []), ...(issue.factoryPlanImages || [])].filter(im => im.url).slice(0, 8).map((img, i) => (
+                  <img key={i} src={img.url} alt="" style={PD.img} />
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={PD.ftr}>
+            Tire Quality Tracker &mdash; Deestone &amp; Bluhorse | เลขเคส: {issue.caseNo}<br />
+            &copy; {new Date().getFullYear()} Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // บีบอัดรูปก่อนเก็บ: ย่อด้านยาวสุดไม่เกิน 1600px และลดคุณภาพ JPEG เหลือ 80%
 // ทำให้ไฟล์เล็กลงมาก (เก็บได้หลายเคสขึ้น) แต่ยังคมชัดพอสำหรับตรวจสอบ/ขยายดู
@@ -407,6 +540,14 @@ export default function App() {
   const [fMonth, setFMonth] = useState("ทั้งปี");
   const [sel, setSel] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [printIssue, setPrintIssue] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [historyData, setHistoryData] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [factoryEditMode, setFactoryEditMode] = useState(false);
+  const [factoryForm, setFactoryForm] = useState(null);
+  const [showEditChoice, setShowEditChoice] = useState(false);
   const [toast, setToast] = useState(null);
   const imgRef = useRef();
 
@@ -426,7 +567,13 @@ export default function App() {
         tireModel: r.tire_model, tireSize: r.tire_size, tireWeek: r.tire_week,
         issueTypes: r.issue_types || (r.issue_type ? [r.issue_type] : []), issueDetail: r.issue_detail,
         reporterName: r.reporter_name, shopName: r.shop_name, shopTier: r.shop_tier,
-        distributorName: r.distributor_name, province: r.province, images: [], imagesLoaded: false,
+        distributorName: r.distributor_name, province: r.province, cancelled: r.cancelled || false,
+        factoryDept: r.factory_dept || "", factoryCause: r.factory_cause || "", factoryCauseDetail: r.factory_cause_detail || "",
+        factoryProblemDetail: r.factory_problem_detail || "", factoryPlan: r.factory_plan || "",
+        factoryDueDate: r.factory_due_date || "", factoryResponsible: r.factory_responsible || "",
+        factoryClosed: r.factory_closed || false, factoryUpdatedAt: r.factory_updated_at || null,
+        factoryProblemImages: [], factoryPlanImages: [], factoryImagesLoaded: false,
+        images: [], imagesLoaded: false,
       }));
       setIssues(mapped);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -441,11 +588,16 @@ export default function App() {
   };
 
   const validateForm = () => {
+    if (!form.date) return showToast("กรุณากรอกวันที่พบปัญหา", "err"), false;
+    if (!form.claimDate) return showToast("กรุณากรอกวันที่รับยางเคลม", "err"), false;
+    if (!form.claimRefNo) return showToast("กรุณากรอกเลขที่ใบเคลม", "err"), false;
     if (!form.tireModel) return showToast("กรุณากรอกรุ่นยาง", "err"), false;
+    if (!form.tireSize) return showToast("กรุณากรอกขนาดยาง", "err"), false;
+    if (!form.tireWeek) return showToast("กรุณากรอกสัปดาห์ยาง / Serial", "err"), false;
     if (form.issueTypes.length === 0) return showToast("กรุณาเลือกประเภทปัญหาอย่างน้อย 1 ข้อ", "err"), false;
-    if (!form.reporterName) return showToast("กรุณากรอกผู้รายงาน", "err"), false;
     if (!form.shopName) return showToast("กรุณากรอกชื่อร้านค้า", "err"), false;
     if (NEEDS_DIST.includes(form.shopTier) && !form.distributorName) return showToast("กรุณากรอกร้านตัวแทนที่รับมา", "err"), false;
+    if (!form.reporterName) return showToast("กรุณากรอกผู้รายงาน", "err"), false;
     return true;
   };
 
@@ -499,30 +651,43 @@ export default function App() {
   };
 
   const deleteIssue = async (issue) => {
-    if (!window.confirm("ยืนยันลบเคส " + issue.caseNo + " ? การลบไม่สามารถย้อนกลับได้")) return;
+    if (!requireAdminPass("ยกเลิกข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
+    if (!window.confirm("ยืนยันยกเลิกเคส " + issue.caseNo + " ? เคสจะถูกขีดฆ่าแต่ยังเก็บเลขเคสไว้")) return;
     try {
-      await sbDelete(issue.id);
-      setIssues(p => p.filter(i => i.id !== issue.id));
+      await sbCancel(issue.id);
+      setIssues(p => p.map(i => i.id === issue.id ? { ...i, cancelled: true } : i));
       setSel(null);
-      showToast("ลบข้อมูลสำเร็จ");
+      showToast("ยกเลิกเคสสำเร็จ");
     } catch {
-      showToast("ลบไม่สำเร็จ กรุณาลองใหม่", "err");
+      showToast("เกิดข้อผิดพลาด กรุณาลองใหม่", "err");
     }
   };
 
   const deleteMany = async (ids) => {
     if (ids.length === 0) return;
-    if (!window.confirm("ยืนยันลบ " + ids.length + " รายการ? การลบไม่สามารถย้อนกลับได้")) return;
-    showToast("กำลังลบข้อมูล...");
-    const results = await Promise.allSettled(ids.map(id => sbDelete(id)));
+    if (!requireAdminPass("ยกเลิกข้อมูล")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
+    if (!window.confirm("ยืนยันยกเลิก " + ids.length + " รายการ? เคสจะถูกขีดฆ่าแต่ยังเก็บเลขเคสไว้")) return;
+    showToast("กำลังยกเลิกข้อมูล...");
+    const results = await Promise.allSettled(ids.map(id => sbCancel(id)));
     const okIds = ids.filter((id, i) => results[i].status === "fulfilled");
-    setIssues(p => p.filter(i => !okIds.includes(i.id)));
+    setIssues(p => p.map(i => okIds.includes(i.id) ? { ...i, cancelled: true } : i));
     setSelectedIds(new Set());
-    if (okIds.length === ids.length) showToast("ลบ " + okIds.length + " รายการสำเร็จ");
-    else showToast("ลบสำเร็จ " + okIds.length + " จาก " + ids.length + " รายการ", okIds.length === 0 ? "err" : "ok");
+    if (okIds.length === ids.length) showToast("ยกเลิก " + okIds.length + " รายการสำเร็จ");
+    else showToast("ยกเลิกสำเร็จ " + okIds.length + " จาก " + ids.length + " รายการ", okIds.length === 0 ? "err" : "ok");
   };
 
   const filtered = useMemo(() => issues.filter(i => {
+    if (i.cancelled) return false;
+    const q = search.toLowerCase();
+    return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
+      && (fBrand === "ทั้งหมด" || i.brand === fBrand)
+      && (fIssue === "ทั้งหมด" || (i.issueTypes || []).includes(fIssue))
+      && (fProd === "ทั้งหมด" || i.productType === fProd)
+      && (fMonth === "ทั้งปี" || (i.date || "").slice(0, 7) === fMonth);
+  }), [issues, search, fBrand, fIssue, fProd, fMonth]);
+
+  // รายการทั้งหมดสำหรับหน้ารายการ (รวมที่ยกเลิกแล้ว แต่ขีดฆ่า)
+  const listItems = useMemo(() => issues.filter(i => {
     const q = search.toLowerCase();
     return (!q || [i.tireModel, i.shopName, i.reporterName, i.province, (i.issueTypes || []).join(" ")].some(v => (v || "").toLowerCase().includes(q)))
       && (fBrand === "ทั้งหมด" || i.brand === fBrand)
@@ -545,6 +710,7 @@ export default function App() {
   };
 
   const exportCSV = async () => {
+    if (!requireAdminPass("ดาวน์โหลดไฟล์ Excel")) return showToast("รหัสผ่านไม่ถูกต้อง", "err");
     showToast("กำลังเตรียมไฟล์...");
     // โหลดรูปของเคสที่ยังไม่เคยโหลด (สำหรับใส่ลิงก์ใน Excel)
     const withImages = await Promise.all(filtered.map(async (i) => {
@@ -561,52 +727,87 @@ export default function App() {
       return found ? { ...p, images: found.images, imagesLoaded: true } : p;
     }));
 
-    // เรียงเก่า -> ใหม่ (รายการที่เพิ่มใหม่อยู่ด้านล่าง)
-    const ordered = [...withImages].sort((a, b) => (a.caseNo || "").localeCompare(b.caseNo || ""));
+    // รวมเคสที่ยกเลิกแล้วด้วย (แสดงแค่เลขเคส + สถานะ)
+    const cancelledItems = issues.filter(i => i.cancelled);
+
+    // เรียงเก่า -> ใหม่ รวมทั้งปกติและยกเลิก
+    const ordered = [...withImages, ...cancelledItems].sort((a, b) => (a.caseNo || "").localeCompare(b.caseNo || ""));
     const imgUrls = (i) => (i.images || []).filter(im => im.url && !im.url.startsWith("data:")).map(im => im.url);
-    const maxImgs = Math.max(0, ...ordered.map(i => imgUrls(i).length));
+    const maxImgs = Math.max(0, ...withImages.map(i => imgUrls(i).length));
     const imgHeaders = Array.from({ length: maxImgs }, (_, k) => "รูปที่ " + (k + 1));
-    const h = ["เลขเคส","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
+    const headers = ["เลขเคส","สถานะ","เลขที่ใบเคลม","ประเภทยางเคลม","วันที่","วันที่รับเคลม","แบรนด์","ประเภทสินค้า","รุ่นยาง","ขนาด","สัปดาห์ยาง/Serial","ประเภทปัญหา","รายละเอียดปัญหา","ผู้รายงาน","ร้านค้า","ประเภทร้าน","ร้านตัวแทน","จังหวัด", ...imgHeaders];
+    const imgColStart = headers.length - maxImgs; // index (0-based) ของคอลัมน์รูปแรก
+
     const rows = ordered.map(i => {
+      if (i.cancelled) {
+        return [i.caseNo, "ยกเลิก", ...Array(headers.length - 2).fill("")];
+      }
       const urls = imgUrls(i);
       const imgCols = Array.from({ length: maxImgs }, (_, k) => urls[k] || "");
       return [
-        i.caseNo, i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
+        i.caseNo, "ปกติ", i.claimRefNo, i.claimType, i.date, i.claimDate, i.brand, i.productType,
         i.tireModel, i.tireSize, i.tireWeek, (i.issueTypes || []).join(", "), i.issueDetail, i.reporterName,
         i.shopName, i.shopTier, i.distributorName, i.province, ...imgCols,
       ];
     });
-    const csv = [h, ...rows].map(r => r.map(v => '"' + (v || "").toString().replace(/"/g, '""') + '"').join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv" }));
-    a.download = "tire_quality.csv";
-    a.click();
-    showToast("Export CSV สำเร็จ");
+
+    // สร้างไฟล์ .xlsx ด้วย SheetJS แล้วใส่ hyperlink ให้คอลัมน์รูปภาพ กดแล้วเปิดรูปได้ทันที
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    rows.forEach((row, rIdx) => {
+      for (let c = imgColStart; c < headers.length; c++) {
+        const url = row[c];
+        if (url) {
+          const cellRef = XLSX.utils.encode_cell({ r: rIdx + 1, c });
+          ws[cellRef].l = { Target: url, Tooltip: "เปิดดูรูปภาพ" };
+          ws[cellRef].v = "🔗 เปิดดูรูป";
+          ws[cellRef].t = "s";
+        }
+      }
+    });
+    ws["!cols"] = headers.map((h, idx) => ({ wch: idx < imgColStart ? 16 : 12 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Tire Quality");
+    XLSX.writeFile(wb, "tire_quality.xlsx");
+    showToast("Export Excel สำเร็จ");
   };
 
-  const exportPDF = async (issue) => {
-    // เปิดหน้าต่างทันทีตอนคลิก (ก่อน await) ไม่งั้นบางเบราว์เซอร์ (มือถือ) จะบล็อก popup
-    const win = window.open("", "_blank");
-    if (win) {
-      win.document.write('<!DOCTYPE html><html><body style="background:#0f1117;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div>กำลังเตรียมเอกสาร...</div></body></html>');
-      win.document.close();
-    }
-    // ดึงรูปล่าสุดจาก Storage ใหม่เสมอ (ไม่พึ่งค่า cache ใน state) เพื่อให้ PDF มีรูปแน่นอน
-    let finalIssue = issue;
+  const exportPDF = async (issue, mode) => {
+    showToast(mode === "save" ? "กำลังสร้างไฟล์ PDF..." : "กำลังเตรียมเอกสาร... เลือกเครื่องพิมพ์ในหน้าต่างที่เปิดขึ้น");
+    let withImages = issue;
     try {
       const images = await sbFetchImages(issue.id);
-      finalIssue = { ...issue, images, imagesLoaded: true };
-      setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
+      withImages = { ...withImages, images, imagesLoaded: true };
     } catch {}
-    if (win && !win.closed) {
-      // ใช้ Blob URL แทน document.write ตรงๆ เพราะ document.write ทำให้หน้าต่างใหม่มี origin เป็น
-      // "null" ซึ่งบางครั้งทำให้รูปภาพ (cross-origin) โหลดไม่ขึ้น Blob URL จะมี origin ที่ถูกต้อง
-      const blob = new Blob([buildPdfHtml(finalIssue)], { type: "text/html" });
-      const blobUrl = URL.createObjectURL(blob);
-      win.location.href = blobUrl;
-    } else {
-      showToast("เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง", "err");
-    }
+    try {
+      const { factoryProblemImages, factoryPlanImages } = await sbFetchFactoryImages(issue.id);
+      withImages = { ...withImages, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true };
+    } catch {}
+    setPrintIssue(withImages);
+    // รอให้ React render #print-area และรูปโหลดเสร็จก่อนดำเนินการต่อ
+    setTimeout(() => {
+      const imgs = document.querySelectorAll("#print-area img");
+      const waitAll = Array.from(imgs).map(im => im.complete ? Promise.resolve() : new Promise(r => { im.onload = r; im.onerror = r; }));
+      Promise.all(waitAll).then(() => {
+        if (mode === "save") {
+          // บันทึกเป็นไฟล์ PDF โดยตรง ไม่ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์
+          const el = document.getElementById("print-area");
+          html2pdf().set({
+            margin: 10,
+            filename: (issue.caseNo || "tire-quality") + ".pdf",
+            image: { type: "jpeg", quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+            pagebreak: { mode: ["css", "legacy"] },
+          }).from(el).save().then(() => {
+            showToast("บันทึกไฟล์ PDF สำเร็จ");
+          }).catch(() => {
+            showToast("สร้างไฟล์ PDF ไม่สำเร็จ กรุณาลองใหม่", "err");
+          });
+        } else {
+          window.print();
+        }
+      });
+    }, 100);
   };
 
   const total = issues.length;
@@ -615,7 +816,7 @@ export default function App() {
   const needsDist = NEEDS_DIST.includes(form.shopTier);
   const hasFilters = search || fBrand !== "ทั้งหมด" || fIssue !== "ทั้งหมด" || fProd !== "ทั้งหมด" || fMonth !== "ทั้งปี";
 
-  // นับจำนวนแต่ละประเภทปัญหา (Top 8) สำหรับกราฟ
+  // นับจำนวนแต่ละประเภทปัญหา (Top 5) สำหรับกราฟ
   const issueTypeCounts = useMemo(() => {
     const counts = {};
     filtered.forEach(i => (i.issueTypes || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
@@ -626,18 +827,177 @@ export default function App() {
 
   const openDetail = (issue) => {
     setSel(issue);
+    setEditMode(false);
+    setShowHistory(false);
+    setFactoryEditMode(false);
     if (!issue.imagesLoaded) {
       sbFetchImages(issue.id).then(images => {
         setSel(s => (s && s.id === issue.id) ? { ...s, images, imagesLoaded: true } : s);
         setIssues(p => p.map(i => i.id === issue.id ? { ...i, images, imagesLoaded: true } : i));
       }).catch(() => {});
     }
+    if (!issue.factoryImagesLoaded) {
+      sbFetchFactoryImages(issue.id).then(({ factoryProblemImages, factoryPlanImages }) => {
+        setSel(s => (s && s.id === issue.id) ? { ...s, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true } : s);
+        setIssues(p => p.map(i => i.id === issue.id ? { ...i, factoryProblemImages, factoryPlanImages, factoryImagesLoaded: true } : i));
+      }).catch(() => {});
+    }
   };
+
+  const startEdit = () => {
+    setEditForm({
+      date: sel.date || "", claimDate: sel.claimDate || "", claimRefNo: sel.claimRefNo || "",
+      claimType: sel.claimType || "New Defective", brand: sel.brand || "Deestone",
+      productType: sel.productType || "Tire MC T/T", tireModel: sel.tireModel || "",
+      tireSize: sel.tireSize || "", tireWeek: sel.tireWeek || "",
+      issueTypes: sel.issueTypes || [], issueDetail: sel.issueDetail || "",
+      reporterName: sel.reporterName || "", shopName: sel.shopName || "",
+      shopTier: sel.shopTier || "ดิสทริบิวเตอร์", distributorName: sel.distributorName || "",
+      province: sel.province || "กรุงเทพมหานคร",
+    });
+    setEditMode(true);
+    setShowHistory(false);
+  };
+
+  const setEF = (key) => (e) => setEditForm(p => ({ ...p, [key]: e.target.value }));
+  const toggleEditIssueType = (t) => setEditForm(p => ({
+    ...p,
+    issueTypes: p.issueTypes.includes(t) ? p.issueTypes.filter(x => x !== t) : [...p.issueTypes, t],
+  }));
+  const onEditProductChange = (e) => {
+    const productType = e.target.value;
+    const valid = issueTypesFor(productType);
+    setEditForm(p => ({ ...p, productType, issueTypes: p.issueTypes.filter(t => valid.includes(t)) }));
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.tireModel) return showToast("กรุณากรอกรุ่นยาง", "err");
+    if (editForm.issueTypes.length === 0) return showToast("กรุณาเลือกประเภทปัญหา", "err");
+    const reporter = editForm.reporterName || sel.reporterName;
+    try {
+      // บันทึก snapshot ก่อนแก้ไข
+      const snapshot = { ...sel };
+      delete snapshot.images;
+      delete snapshot.imagesLoaded;
+      await sbSaveHistory(sel.id, snapshot, reporter);
+      // อัพเดตข้อมูลใหม่
+      const payload = {
+        date: editForm.date, claim_date: editForm.claimDate, claim_ref_no: editForm.claimRefNo,
+        claim_type: editForm.claimType, brand: editForm.brand, product_type: editForm.productType,
+        tire_model: editForm.tireModel, tire_size: editForm.tireSize, tire_week: editForm.tireWeek,
+        issue_types: editForm.issueTypes, issue_detail: editForm.issueDetail,
+        reporter_name: editForm.reporterName, shop_name: editForm.shopName,
+        shop_tier: editForm.shopTier, distributor_name: editForm.distributorName,
+        province: editForm.province,
+      };
+      await sbUpdate(sel.id, payload);
+      const updated = {
+        ...sel, date: editForm.date, claimDate: editForm.claimDate, claimRefNo: editForm.claimRefNo,
+        claimType: editForm.claimType, brand: editForm.brand, productType: editForm.productType,
+        tireModel: editForm.tireModel, tireSize: editForm.tireSize, tireWeek: editForm.tireWeek,
+        issueTypes: editForm.issueTypes, issueDetail: editForm.issueDetail,
+        reporterName: editForm.reporterName, shopName: editForm.shopName,
+        shopTier: editForm.shopTier, distributorName: editForm.distributorName,
+        province: editForm.province,
+      };
+      setSel(updated);
+      setIssues(p => p.map(i => i.id === sel.id ? updated : i));
+      setEditMode(false);
+      showToast("แก้ไขข้อมูลสำเร็จ");
+    } catch {
+      showToast("แก้ไขไม่สำเร็จ กรุณาลองใหม่", "err");
+    }
+  };
+
+  const loadHistory = async () => {
+    if (showHistory) { setShowHistory(false); return; }
+    try {
+      const data = await sbFetchHistory(sel.id);
+      setHistoryData(data);
+      setShowHistory(true);
+    } catch {
+      showToast("โหลดประวัติไม่สำเร็จ", "err");
+    }
+  };
+
+  // ---- ข้อมูลโรงงาน ----
+  const startFactoryEdit = () => {
+    setFactoryForm({
+      factoryDept: sel.factoryDept || "", factoryCause: sel.factoryCause || "", factoryCauseDetail: sel.factoryCauseDetail || "",
+      factoryProblemDetail: sel.factoryProblemDetail || "", factoryProblemImages: sel.factoryProblemImages || [],
+      factoryPlan: sel.factoryPlan || "", factoryPlanImages: sel.factoryPlanImages || [],
+      factoryDueDate: sel.factoryDueDate || "", factoryResponsible: sel.factoryResponsible || "",
+      factoryClosed: sel.factoryClosed || false,
+    });
+    setFactoryEditMode(true);
+    setEditMode(false);
+    setShowHistory(false);
+  };
+
+  const setFF = (key) => (e) => setFactoryForm(p => ({ ...p, [key]: e.target.value }));
+
+  const addFactoryFiles = (key) => (e) => {
+    const files = Array.from(e.target.files);
+    Promise.all(files.map(async (f) => ({
+      name: f.name.replace(/\.\w+$/, "") + ".jpg",
+      url: await compressImage(f, 1600, 0.8),
+    }))).then(res => setFactoryForm(p => ({ ...p, [key]: [...p[key], ...res] })));
+  };
+
+  const removeFactoryImage = (key, idx) => setFactoryForm(p => ({ ...p, [key]: p[key].filter((_, j) => j !== idx) }));
+
+  const saveFactoryEdit = async () => {
+    showToast("กำลังอัปโหลดรูป...");
+    try {
+      const uploadImgs = async (list) => Promise.all(list.map(async (img) => {
+        if (img.url && img.url.startsWith("data:")) return { name: img.name, url: await sbUploadImage(img.url, img.name) };
+        return img;
+      }));
+      const problemImages = await uploadImgs(factoryForm.factoryProblemImages);
+      const planImages = await uploadImgs(factoryForm.factoryPlanImages);
+
+      // บันทึก snapshot ก่อนแก้ไข (สำหรับประวัติ)
+      const snapshot = { ...sel };
+      delete snapshot.images;
+      delete snapshot.imagesLoaded;
+      delete snapshot.factoryProblemImages;
+      delete snapshot.factoryPlanImages;
+      delete snapshot.factoryImagesLoaded;
+      await sbSaveHistory(sel.id, snapshot, factoryForm.factoryResponsible || sel.reporterName);
+
+      const now = new Date().toISOString();
+      const payload = {
+        factory_dept: factoryForm.factoryDept, factory_cause: factoryForm.factoryCause,
+        factory_cause_detail: factoryForm.factoryCauseDetail, factory_problem_detail: factoryForm.factoryProblemDetail,
+        factory_problem_images: problemImages, factory_plan: factoryForm.factoryPlan,
+        factory_plan_images: planImages, factory_due_date: factoryForm.factoryDueDate || null,
+        factory_responsible: factoryForm.factoryResponsible, factory_closed: factoryForm.factoryClosed,
+        factory_updated_at: now,
+      };
+      await sbUpdate(sel.id, payload);
+      const updated = {
+        ...sel, factoryDept: factoryForm.factoryDept, factoryCause: factoryForm.factoryCause,
+        factoryCauseDetail: factoryForm.factoryCauseDetail, factoryProblemDetail: factoryForm.factoryProblemDetail,
+        factoryProblemImages: problemImages, factoryPlan: factoryForm.factoryPlan,
+        factoryPlanImages: planImages, factoryDueDate: factoryForm.factoryDueDate,
+        factoryResponsible: factoryForm.factoryResponsible, factoryClosed: factoryForm.factoryClosed,
+        factoryUpdatedAt: now, factoryImagesLoaded: true,
+      };
+      setSel(updated);
+      setIssues(p => p.map(i => i.id === sel.id ? updated : i));
+      setFactoryEditMode(false);
+      showToast("บันทึกข้อมูลโรงงานสำเร็จ");
+    } catch {
+      showToast("บันทึกไม่สำเร็จ กรุณาลองใหม่", "err");
+    }
+  };
+
   const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonth("ทั้งปี"); };
 
   return (
     <div style={S.page}>
       <style>{CSS}</style>
+      <PrintDoc issue={printIssue} />
 
       {loading && (
         <div className="loading-overlay">
@@ -652,9 +1012,9 @@ export default function App() {
 
       <div style={S.hdr}>
         <div className="header-inner" style={S.hdrIn}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="app-title-block" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <img src="/deestone-logo.png" alt="Deestone" style={{ height: 30, width: "auto" }} />
-            <div>
+            <div className="app-title-text">
               <div style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9" }}>Tire Quality Tracker</div>
               <div style={{ fontSize: 11, color: "#64748b" }}>Deestone &amp; Bluhorse</div>
             </div>
@@ -720,8 +1080,8 @@ export default function App() {
               ]} />
 
               {/* Bar: ประเภทปัญหา (Top 8) */}
-              <BarChart title="ประเภทปัญหาที่พบมากสุด (Top 8)" color="#6366f1" items={issueTypeCounts.map((x, i) => ({
-                label: x.label.length > 8 ? x.label.slice(0, 8) + "…" : x.label, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#ef4444", "#64748b"][i % 8],
+              <BarChart title="ประเภทปัญหาที่พบมากสุด (Top 5)" color="#6366f1" items={issueTypeCounts.map((x, i) => ({
+                label: x.label.length > 8 ? x.label.slice(0, 8) + "…" : x.label, color: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#ef4444", "#64748b"][i % 5],
                 count: x.count,
               }))} />
 
@@ -770,7 +1130,7 @@ export default function App() {
         {view === "form" && !previewMode && (
           <div className="fu" style={{ maxWidth: 800, margin: "0 auto" }}>
             <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>บันทึกปัญหาคุณภาพ</h2>
+              <h2 className="page-title" style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>บันทึกปัญหาคุณภาพ</h2>
               <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>กรอกข้อมูลให้ครบ * = จำเป็น</p>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -782,9 +1142,9 @@ export default function App() {
                   </Field>
                   <TField label="วันที่พบปัญหา" required type="date" value={form.date} onChange={setF("date")} />
                   <SField label="ประเภทสินค้า" options={PRODUCT_TYPES} value={form.productType} onChange={onProductChange} />
-                  <TField label="สัปดาห์ยาง / Serial Number" placeholder="เช่น 2524, SN-001" value={form.tireWeek} onChange={setF("tireWeek")} />
+                  <TField label="สัปดาห์ยาง / Serial Number" required placeholder="เช่น 2524, SN-001" value={form.tireWeek} onChange={setF("tireWeek")} />
                   <TField label="รุ่นยาง" required placeholder="เช่น D-268" value={form.tireModel} onChange={setF("tireModel")} />
-                  <TField label="ขนาดยาง" placeholder="เช่น 185/65R15" value={form.tireSize} onChange={setF("tireSize")} />
+                  <TField label="ขนาดยาง" required placeholder="เช่น 185/65R15" value={form.tireSize} onChange={setF("tireSize")} />
                 </div>
               </Card>
 
@@ -792,7 +1152,7 @@ export default function App() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div>
                     <label style={S.lbl}>ประเภทปัญหา <span style={{ color: "#ef4444" }}>*</span> <span style={{ color: "#64748b", fontSize: 11 }}>(เลือกได้มากกว่า 1)</span></label>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+                    <div className="issue-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
                       {issueTypesFor(form.productType).map(t => {
                         const checked = form.issueTypes.includes(t);
                         return (
@@ -811,8 +1171,8 @@ export default function App() {
 
               <Card title="ข้อมูลร้านค้า">
                 <div className="form-grid">
-                  <TField label="วันที่รับยางเคลม" type="date" value={form.claimDate} onChange={setF("claimDate")} />
-                  <TField label="เลขที่ใบเคลม" placeholder="เช่น CLM-2026-001" value={form.claimRefNo} onChange={setF("claimRefNo")} />
+                  <TField label="วันที่รับยางเคลม" required type="date" value={form.claimDate} onChange={setF("claimDate")} />
+                  <TField label="เลขที่ใบเคลม" required placeholder="เช่น CLM-2026-001" value={form.claimRefNo} onChange={setF("claimRefNo")} />
                   <Field label="ประเภทยางเคลม">
                     <ButtonGroup value={form.claimType} onChange={v => setForm(p => ({ ...p, claimType: v }))} options={CLAIM_TYPES} getColor={() => "#6366f1"} />
                   </Field>
@@ -896,16 +1256,16 @@ export default function App() {
         {/* LIST */}
         {view === "list" && !sel && (
           <div className="fu">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+            <div className="mobile-stack" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
               <div>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>รายการปัญหาทั้งหมด</h2>
-                <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {filtered.length} รายการ{selectedIds.size > 0 ? " • เลือกอยู่ " + selectedIds.size + " รายการ" : ""}</p>
+                <h2 className="page-title" style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>รายการปัญหาทั้งหมด</h2>
+                <p style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>พบ {listItems.length} รายการ{selectedIds.size > 0 ? " • เลือกอยู่ " + selectedIds.size + " รายการ" : ""}</p>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="mobile-full" style={{ display: "flex", gap: 8 }}>
                 {selectedIds.size > 0 && (
-                  <button onClick={() => deleteMany([...selectedIds])} style={{ ...S.btn, background: "#ef4444", color: "#fff", padding: "10px 16px" }}>🗑️ ลบ {selectedIds.size} รายการ</button>
+                  <button onClick={() => deleteMany([...selectedIds])} style={{ ...S.btn, background: "#ef4444", color: "#fff", padding: "10px 16px", flex: 1 }}>🗑️ ลบ {selectedIds.size} รายการ</button>
                 )}
-                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px" }}>📥 Export CSV</button>
+                <button onClick={exportCSV} style={{ ...S.btn, background: "#16a34a", color: "#fff", padding: "10px 20px", flex: 1 }}>📥 Export Excel</button>
               </div>
             </div>
             <Card style={{ marginBottom: 16 }}>
@@ -925,35 +1285,61 @@ export default function App() {
                         checked={filtered.length > 0 && selectedIds.size === filtered.length}
                         onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(i => i.id)) : new Set())} />
                     </th>
-                    {[["เลขเคส", false], ["วันที่", false], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true]].map(([h, hide]) => (
+                    {[["เลขเคส", false], ["วันที่", true], ["แบรนด์", false], ["สินค้า", true], ["รุ่น / ขนาด", false], ["ปัญหา", false], ["ร้านค้า", true], ["จังหวัด", true], ["ผู้รายงาน", true], ["สถานะ", false]].map(([h, hide]) => (
                       <th key={h} className={hide ? "hide-mobile" : ""} style={{ padding: "12px 14px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0
-                    ? <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
-                    : filtered.map((issue, i) => (
-                      <tr key={issue.id} className="rh" style={{ borderBottom: "1px solid #1e2235", background: selectedIds.has(issue.id) ? "#6366f115" : (i % 2 === 0 ? "transparent" : "#14161f") }}>
-                        <td style={{ padding: "12px 10px" }} onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" style={{ width: 16, height: 16, cursor: "pointer" }} checked={selectedIds.has(issue.id)}
-                            onChange={e => setSelectedIds(prev => {
-                              const next = new Set(prev);
-                              if (e.target.checked) next.add(issue.id); else next.delete(issue.id);
-                              return next;
-                            })} />
-                        </td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#6366f1", fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer" }}>{issue.caseNo}</td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#94a3b8", whiteSpace: "nowrap", cursor: "pointer" }}>{issue.date}</td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", cursor: "pointer" }}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.productType}</td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", cursor: "pointer" }}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
-                        <td onClick={() => openDetail(issue)} style={{ padding: "12px 14px", color: "#e2e8f0", fontSize: 12, cursor: "pointer" }}>{(issue.issueTypes || []).join(", ")}</td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", cursor: "pointer" }}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.province}</td>
-                        <td onClick={() => openDetail(issue)} className="hide-mobile" style={{ padding: "12px 14px", color: "#94a3b8", cursor: "pointer" }}>{issue.reporterName}</td>
-                      </tr>
-                    ))}
+                  {listItems.length === 0
+                    ? <tr><td colSpan={11} style={{ padding: 40, textAlign: "center", color: "#475569" }}>ยังไม่มีข้อมูล</td></tr>
+                    : listItems.map((issue, i) => {
+                        const isCancelled = issue.cancelled;
+                        const rowStyle = {
+                          borderBottom: "1px solid #1e2235",
+                          background: isCancelled ? "#1a0f0f" : (selectedIds.has(issue.id) ? "#6366f115" : (i % 2 === 0 ? "transparent" : "#14161f")),
+                          opacity: isCancelled ? 0.55 : 1,
+                          textDecoration: isCancelled ? "line-through" : "none",
+                        };
+                        const cellClick = isCancelled ? undefined : () => openDetail(issue);
+                        const cellStyle = (extra) => ({ padding: "12px 14px", cursor: isCancelled ? "default" : "pointer", ...extra });
+                        return (
+                          <tr key={issue.id} style={rowStyle}>
+                            <td style={{ padding: "12px 10px" }} onClick={e => e.stopPropagation()}>
+                              {!isCancelled && (
+                                <input type="checkbox" style={{ width: 16, height: 16, cursor: "pointer" }} checked={selectedIds.has(issue.id)}
+                                  onChange={e => setSelectedIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(issue.id); else next.delete(issue.id);
+                                    return next;
+                                  })} />
+                              )}
+                              {isCancelled && <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>ยกเลิก</span>}
+                            </td>
+                            <td onClick={cellClick} style={cellStyle({ color: isCancelled ? "#64748b" : "#6366f1", fontWeight: 700, whiteSpace: "nowrap" })}>{issue.caseNo}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8", whiteSpace: "nowrap" })}>{issue.date}</td>
+                            <td onClick={cellClick} style={cellStyle({})}><Badge bg={BC[issue.brand] + "25"} color={BC[issue.brand]}>{issue.brand}</Badge></td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.productType}</td>
+                            <td onClick={cellClick} style={cellStyle({})}><div style={{ fontWeight: 600, color: "#e2e8f0" }}>{issue.tireModel}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.tireSize}</div></td>
+                            <td onClick={cellClick} style={cellStyle({ color: "#e2e8f0", fontSize: 12 })}>{(issue.issueTypes || []).join(", ")}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({})}><div style={{ color: "#e2e8f0" }}>{issue.shopName}</div><div style={{ fontSize: 11, color: "#64748b" }}>{issue.shopTier}</div></td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.province}</td>
+                            <td onClick={cellClick} className="hide-mobile" style={cellStyle({ color: "#94a3b8" })}>{issue.reporterName}</td>
+                            <td onClick={cellClick} style={cellStyle({ fontSize: 12, whiteSpace: "nowrap" })}>
+                              {isCancelled ? "-" : (() => {
+                                if (!issue.factoryDept && !issue.factoryClosed) return <span style={{ color: "#475569" }}>ยังไม่ระบุ</span>;
+                                const dotColor = issue.factoryClosed ? "#22c55e" : "#ef4444";
+                                return (
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={issue.factoryClosed ? "ปิดเคส" : "กำลังดำเนินการ"}>
+                                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
+                                    <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{issue.factoryDept || "-"}</span>
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        );
+                      })}
                 </tbody>
               </table></div>
             </Card>
@@ -963,15 +1349,181 @@ export default function App() {
         {/* DETAIL */}
         {view === "list" && sel && (
           <div className="fu">
-            <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-              <button onClick={() => setSel(null)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>← กลับรายการ</button>
-              <button onClick={() => exportPDF(sel)} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 20px" }}>📄 Export PDF</button>
-              <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ลบข้อมูล</button>
+            <div className="mobile-toolbar" style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+              <button onClick={() => {
+                if (editMode || factoryEditMode) { setEditMode(false); setFactoryEditMode(false); return; }
+                setSel(null); setShowHistory(false); setShowEditChoice(false);
+              }} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "8px 16px" }}>
+                {(editMode || factoryEditMode) ? "← กลับหน้าสรุปเคส" : "← กลับรายการ"}
+              </button>
+              <button onClick={() => exportPDF(sel, "save")} style={{ ...S.btn, background: "#dc2626", color: "#fff", padding: "8px 16px" }}>💾 บันทึกเป็น PDF</button>
+              <button onClick={() => exportPDF(sel, "print")} style={{ ...S.btn, background: "transparent", color: "#dc2626", border: "1px solid #dc2626", padding: "8px 16px" }}>🖨️ พิมพ์กระดาษ</button>
+              {!sel.cancelled && (
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => !editMode && !factoryEditMode && setShowEditChoice(v => !v)}
+                    style={{ ...S.btn, background: (editMode || factoryEditMode) ? "#334155" : "#f59e0b", color: "#fff", padding: "8px 20px", opacity: (editMode || factoryEditMode) ? 0.5 : 1, cursor: (editMode || factoryEditMode) ? "default" : "pointer" }}>
+                    ✏️ แก้ไข
+                  </button>
+                  {showEditChoice && !editMode && !factoryEditMode && (
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 6, width: "max(200px, 60vw)", maxWidth: "calc(100vw - 32px)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                      <button onClick={() => { setShowEditChoice(false); startEdit(); }} style={{ ...S.btn, background: "#f59e0b", color: "#fff", padding: "10px 14px", textAlign: "left" }}>📋 แก้ไขข้อมูลฝั่งเซล</button>
+                      <button onClick={() => { setShowEditChoice(false); startFactoryEdit(); }} style={{ ...S.btn, background: "#0891b2", color: "#fff", padding: "10px 14px", textAlign: "left" }}>🏭 แก้ไขข้อมูลฝั่งโรงงาน</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!sel.cancelled && <button onClick={loadHistory} style={{ ...S.btn, background: showHistory ? "#6366f1" : "transparent", color: showHistory ? "#fff" : "#94a3b8", border: "1px solid " + (showHistory ? "#6366f1" : "#2d3148"), padding: "8px 20px" }}>🕐 ประวัติการแก้ไข</button>}
+              {!sel.cancelled && <button onClick={() => deleteIssue(sel)} style={{ ...S.btn, background: "transparent", color: "#ef4444", border: "1px solid #ef4444", padding: "8px 20px", marginLeft: "auto" }}>🗑️ ยกเลิกเคส</button>}
+              {sel.cancelled && <span style={{ marginLeft: "auto", color: "#ef4444", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>⛔ เคสนี้ถูกยกเลิกแล้ว</span>}
             </div>
+
+            {/* HISTORY PANEL */}
+            {showHistory && (
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #6366f1" }}>
+                <div style={{ fontWeight: 700, color: "#6366f1", fontSize: 14, marginBottom: 12 }}>🕐 ประวัติการแก้ไข ({historyData.length} ครั้ง)</div>
+                {historyData.length === 0
+                  ? <div style={{ color: "#64748b", fontSize: 13 }}>ยังไม่มีประวัติการแก้ไข</div>
+                  : historyData.map((h, idx) => {
+                    const snap = h.snapshot || {};
+                    return (
+                      <div key={h.id} style={{ borderBottom: "1px solid #1e2235", padding: "12px 0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13 }}>ครั้งที่ {historyData.length - idx} — {snap.reporterName || "-"}</span>
+                          <span style={{ fontSize: 12, color: "#64748b" }}>{new Date(h.changed_at).toLocaleString("th-TH")}</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                          {[["แบรนด์", snap.brand], ["ประเภทสินค้า", snap.productType], ["รุ่นยาง", snap.tireModel], ["ขนาดยาง", snap.tireSize], ["ประเภทปัญหา", (snap.issueTypes || []).join(", ")], ["ร้านค้า", snap.shopName], ["จังหวัด", snap.province]].map(([k, v]) => (
+                            <div key={k}><span style={{ color: "#475569" }}>{k}: </span>{v || "-"}</div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </Card>
+            )}
+
+            {/* EDIT FORM */}
+            {editMode && editForm && (
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #f59e0b" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, color: "#f59e0b", fontSize: 14 }}>✏️ แก้ไขข้อมูลเคส {sel.caseNo}</div>
+                  <button onClick={() => setEditMode(false)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "6px 12px", fontSize: 12 }}>← กลับหน้าสรุปเคส</button>
+                </div>
+                <div className="form-grid">
+                  <Field label="แบรนด์"><ButtonGroup value={editForm.brand} onChange={v => setEditForm(p => ({ ...p, brand: v }))} options={BRANDS} getColor={b => BC[b]} /></Field>
+                  <TField label="วันที่พบปัญหา" type="date" value={editForm.date} onChange={setEF("date")} />
+                  <SField label="ประเภทสินค้า" options={PRODUCT_TYPES} value={editForm.productType} onChange={onEditProductChange} />
+                  <TField label="รุ่นยาง" required value={editForm.tireModel} onChange={setEF("tireModel")} />
+                  <TField label="ขนาดยาง" value={editForm.tireSize} onChange={setEF("tireSize")} />
+                  <TField label="สัปดาห์ยาง / Serial" value={editForm.tireWeek} onChange={setEF("tireWeek")} />
+                  <TField label="วันที่รับยางเคลม" type="date" value={editForm.claimDate} onChange={setEF("claimDate")} />
+                  <TField label="เลขที่ใบเคลม" value={editForm.claimRefNo} onChange={setEF("claimRefNo")} />
+                  <div style={S.colFull}>
+                    <Field label="ประเภทปัญหา *">
+                      <div className="issue-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {issueTypesFor(editForm.productType).map(t => {
+                          const checked = editForm.issueTypes.includes(t);
+                          return (
+                            <button key={t} onClick={() => toggleEditIssueType(t)}
+                              style={{ ...S.btn, textAlign: "left", padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 8, background: checked ? "#6366f120" : "#0f1117", color: checked ? "#fff" : "#94a3b8", border: "1.5px solid " + (checked ? "#6366f1" : "#2d3148") }}>
+                              <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#6366f1" : "transparent", border: "1.5px solid " + (checked ? "#6366f1" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
+                              {t}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                  </div>
+                  <TField label="รายละเอียดปัญหา" value={editForm.issueDetail} onChange={setEF("issueDetail")} />
+                  <TField label="ชื่อร้านค้า" required value={editForm.shopName} onChange={setEF("shopName")} />
+                  <div style={S.colFull}>
+                    <Field label="ประเภทร้าน">
+                      <ButtonGroup small value={editForm.shopTier}
+                        onChange={v => setEditForm(p => ({ ...p, shopTier: v, distributorName: NEEDS_DIST.includes(v) ? p.distributorName : "" }))}
+                        options={SHOP_TIERS} getColor={() => "#6366f1"} />
+                    </Field>
+                  </div>
+                  {NEEDS_DIST.includes(editForm.shopTier) && <TField label="ร้านตัวแทนที่รับมา" required value={editForm.distributorName} onChange={setEF("distributorName")} />}
+                  <SField label="จังหวัด" options={PROVINCES} value={editForm.province} onChange={setEF("province")} />
+                  <TField label="ผู้รายงาน" required value={editForm.reporterName} onChange={setEF("reporterName")} />
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                  <button onClick={() => setEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>← กลับหน้าสรุปเคส</button>
+                  <button className="btn-green" onClick={saveEdit} style={{ ...S.btn, flex: 2, color: "#fff", padding: 12, fontSize: 15 }}>💾 บันทึกการแก้ไข</button>
+                </div>
+              </Card>
+            )}
+
+            {/* FACTORY EDIT FORM */}
+            {factoryEditMode && factoryForm && (
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #0891b2" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, color: "#0891b2", fontSize: 14 }}>🏭 ข้อมูลโรงงาน — เคส {sel.caseNo}</div>
+                  <button onClick={() => setFactoryEditMode(false)} style={{ ...S.btn, background: "transparent", color: "#94a3b8", border: "1px solid #2d3148", padding: "6px 12px", fontSize: 12 }}>← กลับหน้าสรุปเคส</button>
+                </div>
+                <div className="form-grid">
+                  <SField label="หน่วยงานที่รับผิดชอบ" options={["", ...FACTORY_DEPTS]} value={factoryForm.factoryDept} onChange={setFF("factoryDept")} />
+                  <TField label="ผู้รับผิดชอบ" value={factoryForm.factoryResponsible} onChange={setFF("factoryResponsible")} />
+                  <SField label="ต้นเหตุของปัญหา" options={["", ...FACTORY_CAUSES]} value={factoryForm.factoryCause} onChange={setFF("factoryCause")} />
+                  <TField label="รายละเอียดต้นเหตุเพิ่มเติม" placeholder="ระบุรายละเอียด" value={factoryForm.factoryCauseDetail} onChange={setFF("factoryCauseDetail")} />
+                  <TField label="กำหนดวันแก้ไขแล้วเสร็จ" type="date" value={factoryForm.factoryDueDate} onChange={setFF("factoryDueDate")} />
+                  <div />
+
+                  <div style={S.colFull}>
+                    <Field label="รายละเอียดปัญหาที่พบ">
+                      <textarea style={{ ...S.inp, minHeight: 80, resize: "vertical" }} value={factoryForm.factoryProblemDetail} onChange={setFF("factoryProblemDetail")} />
+                    </Field>
+                    <div style={{ marginTop: 8 }}>
+                      <input id="factoryProblemImgInput" type="file" accept="image/*" multiple style={{ display: "none" }} onChange={addFactoryFiles("factoryProblemImages")} />
+                      <button onClick={() => document.getElementById("factoryProblemImgInput").click()} style={{ ...S.btn, background: "#1e293b", color: "#94a3b8", padding: "8px 14px", border: "1.5px dashed #334155" }}>📷 แนบรูป</button>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                        {factoryForm.factoryProblemImages.map((img, i) => (
+                          <div key={i} style={{ position: "relative" }}>
+                            <img src={img.url} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1.5px solid #2d3148" }} />
+                            <button onClick={() => removeFactoryImage("factoryProblemImages", i)} style={{ position: "absolute", top: -6, right: -6, background: "#ef4444", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10 }}>x</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={S.colFull}>
+                    <Field label="แผนการแก้ไข">
+                      <textarea style={{ ...S.inp, minHeight: 80, resize: "vertical" }} value={factoryForm.factoryPlan} onChange={setFF("factoryPlan")} />
+                    </Field>
+                    <div style={{ marginTop: 8 }}>
+                      <input id="factoryPlanImgInput" type="file" accept="image/*" multiple style={{ display: "none" }} onChange={addFactoryFiles("factoryPlanImages")} />
+                      <button onClick={() => document.getElementById("factoryPlanImgInput").click()} style={{ ...S.btn, background: "#1e293b", color: "#94a3b8", padding: "8px 14px", border: "1.5px dashed #334155" }}>📷 แนบรูป</button>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                        {factoryForm.factoryPlanImages.map((img, i) => (
+                          <div key={i} style={{ position: "relative" }}>
+                            <img src={img.url} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1.5px solid #2d3148" }} />
+                            <button onClick={() => removeFactoryImage("factoryPlanImages", i)} style={{ position: "absolute", top: -6, right: -6, background: "#ef4444", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10 }}>x</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={S.colFull}>
+                    <button onClick={() => setFactoryForm(p => ({ ...p, factoryClosed: !p.factoryClosed }))}
+                      style={{ ...S.btn, display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: factoryForm.factoryClosed ? "#16a34a20" : "#0f1117", border: "1.5px solid " + (factoryForm.factoryClosed ? "#16a34a" : "#2d3148"), width: "100%" }}>
+                      <span style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: factoryForm.factoryClosed ? "#16a34a" : "transparent", border: "1.5px solid " + (factoryForm.factoryClosed ? "#16a34a" : "#475569"), color: "#fff", fontSize: 13 }}>{factoryForm.factoryClosed ? "✓" : ""}</span>
+                      <span style={{ color: factoryForm.factoryClosed ? "#22c55e" : "#94a3b8", fontWeight: 600 }}>ปิดเคส</span>
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                  <button onClick={() => setFactoryEditMode(false)} style={{ ...S.btn, flex: 1, background: "#334155", color: "#fff", padding: 12 }}>← กลับหน้าสรุปเคส</button>
+                  <button className="btn-green" onClick={saveFactoryEdit} style={{ ...S.btn, flex: 2, color: "#fff", padding: 12, fontSize: 15 }}>💾 บันทึกข้อมูลโรงงาน</button>
+                </div>
+              </Card>
+            )}
+
             <div className="detail-grid">
-              <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 20 }}>
-                <img src="/deestone-logo.png" alt="Deestone" style={{ height: 64, width: "auto" }} />
-                <div style={{ fontSize: 30, fontWeight: 800, color: "#f1f5f9", letterSpacing: 0.5 }}>{sel.caseNo}</div>
+              <div style={{ ...S.card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, minWidth: 0, maxWidth: "100%", flexWrap: "wrap", overflow: "hidden" }}>
+                <img src="/deestone-logo.png" alt="Deestone" className="detail-logo" style={{ height: 64, width: "auto", flexShrink: 0, maxWidth: "100%" }} />
+                <div className="detail-caseno" style={{ fontSize: 30, fontWeight: 800, color: "#f1f5f9", letterSpacing: 0.5, minWidth: 0, maxWidth: "100%", wordBreak: "break-all", overflowWrap: "anywhere" }}>{sel.caseNo}</div>
               </div>
 
               <KVList title="ข้อมูลพื้นฐาน" items={[
@@ -998,6 +1550,54 @@ export default function App() {
                     ))}
                   </div>
                 </Card>
+              )}
+
+              {(sel.factoryDept || sel.factoryCause || sel.factoryProblemDetail || sel.factoryPlan || sel.factoryClosed) && (
+                <div style={S.colFull}>
+                  <Card style={{ borderLeft: "4px solid #0891b2" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ fontWeight: 700, color: "#0891b2", fontSize: 13, textTransform: "uppercase", letterSpacing: 1 }}>🏭 ข้อมูลโรงงาน</div>
+                      {sel.factoryClosed
+                        ? <Badge bg="#16a34a25" color="#22c55e">✅ ปิดเคสแล้ว</Badge>
+                        : sel.factoryDept && <Badge bg="#0891b225" color="#0891b2">🔧 {sel.factoryDept} กำลังดำเนินการ</Badge>}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 14, marginBottom: 12 }}>
+                      <div><span style={{ color: "#64748b" }}>หน่วยงานที่รับผิดชอบ: </span>{sel.factoryDept || "-"}</div>
+                      <div><span style={{ color: "#64748b" }}>ผู้รับผิดชอบ: </span>{sel.factoryResponsible || "-"}</div>
+                      <div><span style={{ color: "#64748b" }}>ต้นเหตุของปัญหา: </span>{sel.factoryCause || "-"}{sel.factoryCauseDetail ? " (" + sel.factoryCauseDetail + ")" : ""}</div>
+                      <div><span style={{ color: "#64748b" }}>กำหนดแก้ไขเสร็จ: </span>{sel.factoryDueDate || "-"}</div>
+                    </div>
+                    {sel.factoryUpdatedAt && (
+                      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>🕐 บันทึกล่าสุดเมื่อ: {new Date(sel.factoryUpdatedAt).toLocaleString("th-TH")}</div>
+                    )}
+                    {sel.factoryProblemDetail && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ color: "#64748b", fontSize: 13, marginBottom: 4 }}>รายละเอียดปัญหาที่พบ</div>
+                        <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{sel.factoryProblemDetail}</div>
+                        {sel.factoryImagesLoaded && (sel.factoryProblemImages || []).length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                            {sel.factoryProblemImages.map((img, i) => (
+                              <img key={i} src={img.url} alt="" style={{ width: 90, height: 68, objectFit: "cover", borderRadius: 6, border: "1.5px solid #2d3148", cursor: "pointer" }} onClick={() => window.open(img.url, "_blank")} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {sel.factoryPlan && (
+                      <div>
+                        <div style={{ color: "#64748b", fontSize: 13, marginBottom: 4 }}>แผนการแก้ไข</div>
+                        <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{sel.factoryPlan}</div>
+                        {sel.factoryImagesLoaded && (sel.factoryPlanImages || []).length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                            {sel.factoryPlanImages.map((img, i) => (
+                              <img key={i} src={img.url} alt="" style={{ width: 90, height: 68, objectFit: "cover", borderRadius: 6, border: "1.5px solid #2d3148", cursor: "pointer" }} onClick={() => window.open(img.url, "_blank")} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                </div>
               )}
             </div>
           </div>

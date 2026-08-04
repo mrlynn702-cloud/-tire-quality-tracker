@@ -134,7 +134,7 @@ const BC = { Deestone: "#e63946", Bluhorse: "#1d4ed8" };
 function initForm() {
   return {
     date: new Date().toISOString().split("T")[0],
-    claimDate: "", claimRefNo: "", claimType: "New Defective", brand: "Deestone", productType: "Tire MC T/T",
+    claimDate: "", claimRefNo: "", claimType: "Claim", brand: "Deestone", productType: "Tire MC T/T",
     tireModel: "", tireSize: "", issueTypes: [], issueDetail: "",
     reporterName: "", shopName: "", shopTier: "ดิสทริบิวเตอร์",
     distributorName: "", province: "กรุงเทพมหานคร", tireWeek: "", images: [],

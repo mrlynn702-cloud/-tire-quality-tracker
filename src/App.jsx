@@ -1418,6 +1418,7 @@ export default function App() {
                   <TField label="สัปดาห์ยาง / Serial" value={editForm.tireWeek} onChange={setEF("tireWeek")} />
                   <TField label="วันที่รับยางเคลม" type="date" value={editForm.claimDate} onChange={setEF("claimDate")} />
                   <TField label="เลขที่ใบเคลม" value={editForm.claimRefNo} onChange={setEF("claimRefNo")} />
+                  <Field label="ประเภทยางเคลม"><ButtonGroup value={editForm.claimType} onChange={v => setEditForm(p => ({ ...p, claimType: v }))} options={CLAIM_TYPES} getColor={() => "#6366f1"} /></Field>
                   <div style={S.colFull}>
                     <Field label="ประเภทปัญหา *">
                       <div className="issue-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

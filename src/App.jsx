@@ -543,7 +543,8 @@ export default function App() {
   const [fMonths, setFMonths] = useState(new Set()); // ว่าง = ทั้งปี
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [reportCompareMonths, setReportCompareMonths] = useState(new Set());
+  const [reportMonthsA, setReportMonthsA] = useState(new Set()); // ฝั่งซ้าย: ช่วงหลัก
+  const [reportMonthsB, setReportMonthsB] = useState(new Set()); // ฝั่งขวา: ช่วงเทียบ
   const [reportGenerating, setReportGenerating] = useState(false);
   const [sel, setSel] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -838,15 +839,18 @@ export default function App() {
   };
 
   const openReportModal = () => {
-    setReportCompareMonths(new Set());
+    setReportMonthsA(new Set(fMonths)); // เริ่มต้นฝั่ง A ด้วยเดือนที่กำลัง filter อยู่ใน Dashboard (แก้ไขต่อได้อิสระ)
+    setReportMonthsB(new Set());
     setShowReportModal(true);
   };
 
-  // วิเคราะห์ข้อมูล: ช่วงปัจจุบัน (ตาม filter เดือนใน Dashboard) เทียบกับช่วงที่เลือกเปรียบเทียบ
+  // วิเคราะห์ข้อมูล: เปรียบเทียบช่วง A กับช่วง B ที่เลือกอิสระใน modal
   const buildReportAnalysis = () => {
-    const currentItems = filtered; // ช่วงที่กำลังดู (ตาม fMonths ที่เลือกไว้)
-    const compareItems = reportCompareMonths.size > 0
-      ? issues.filter(i => !i.cancelled && reportCompareMonths.has((i.date || "").slice(0, 7)))
+    const currentItems = reportMonthsA.size > 0
+      ? issues.filter(i => !i.cancelled && reportMonthsA.has((i.date || "").slice(0, 7)))
+      : issues.filter(i => !i.cancelled);
+    const compareItems = reportMonthsB.size > 0
+      ? issues.filter(i => !i.cancelled && reportMonthsB.has((i.date || "").slice(0, 7)))
       : [];
 
     const currentCounts = countIssueTypes(currentItems);
@@ -862,8 +866,8 @@ export default function App() {
       return { type: t, current: cur, compare: cmp, diff, pctChange, isNew };
     }).sort((a, b) => b.current - a.current);
 
-    const currentPeriodLabel = fMonths.size === 0 ? "ทั้งปี" : [...fMonths].sort().map(monthLabel).join(", ");
-    const comparePeriodLabel = reportCompareMonths.size === 0 ? null : [...reportCompareMonths].sort().map(monthLabel).join(", ");
+    const currentPeriodLabel = reportMonthsA.size === 0 ? "ทั้งปี" : [...reportMonthsA].sort().map(monthLabel).join(", ");
+    const comparePeriodLabel = reportMonthsB.size === 0 ? null : [...reportMonthsB].sort().map(monthLabel).join(", ");
 
     return {
       rows, currentPeriodLabel, comparePeriodLabel,
@@ -1224,26 +1228,46 @@ export default function App() {
 
       {showReportModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => !reportGenerating && setShowReportModal(false)}>
-          <div style={{ ...S.card, maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+          <div style={{ ...S.card, maxWidth: 640, width: "100%", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, color: "#7c3aed", fontSize: 16, marginBottom: 6 }}>📊 สร้างรายงานสรุป</div>
-            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 16 }}>
-              ช่วงที่กำลังดูอยู่: <b style={{ color: "#e2e8f0" }}>{fMonths.size === 0 ? "ทั้งปี" : [...fMonths].sort().map(monthLabel).join(", ")}</b>
+            <div style={{ color: "#64748b", fontSize: 13, marginBottom: 16 }}>เลือกเดือนทั้ง 2 ฝั่งเพื่อเปรียบเทียบ (ฝั่งขวาไม่บังคับ)</div>
+            <div className="form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <div style={{ fontWeight: 700, color: "#6366f1", fontSize: 13, marginBottom: 8 }}>🅰️ ช่วงหลัก</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto", border: "1px solid #2d3148", borderRadius: 8, padding: 8 }}>
+                  {monthOptions.length === 0 && <div style={{ color: "#475569", fontSize: 12, padding: "6px 10px" }}>ยังไม่มีข้อมูล</div>}
+                  {monthOptions.map(m => {
+                    const checked = reportMonthsA.has(m);
+                    return (
+                      <button key={m} onClick={() => setReportMonthsA(prev => { const next = new Set(prev); if (next.has(m)) next.delete(m); else next.add(m); return next; })}
+                        style={{ ...S.btn, textAlign: "left", padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, background: checked ? "#6366f120" : "transparent", color: checked ? "#fff" : "#94a3b8", border: "1px solid " + (checked ? "#6366f1" : "#2d3148") }}>
+                        <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#6366f1" : "transparent", border: "1.5px solid " + (checked ? "#6366f1" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
+                        {monthLabel(m)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{reportMonthsA.size === 0 ? "ไม่เลือก = ทั้งปี" : reportMonthsA.size + " เดือนที่เลือก"}</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, color: "#f59e0b", fontSize: 13, marginBottom: 8 }}>🅱️ ช่วงเทียบ (ไม่บังคับ)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto", border: "1px solid #2d3148", borderRadius: 8, padding: 8 }}>
+                  {monthOptions.length === 0 && <div style={{ color: "#475569", fontSize: 12, padding: "6px 10px" }}>ยังไม่มีข้อมูล</div>}
+                  {monthOptions.map(m => {
+                    const checked = reportMonthsB.has(m);
+                    return (
+                      <button key={m} onClick={() => setReportMonthsB(prev => { const next = new Set(prev); if (next.has(m)) next.delete(m); else next.add(m); return next; })}
+                        style={{ ...S.btn, textAlign: "left", padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, background: checked ? "#f59e0b20" : "transparent", color: checked ? "#fff" : "#94a3b8", border: "1px solid " + (checked ? "#f59e0b" : "#2d3148") }}>
+                        <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#f59e0b" : "transparent", border: "1.5px solid " + (checked ? "#f59e0b" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
+                        {monthLabel(m)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{reportMonthsB.size === 0 ? "ไม่เลือก = ไม่เทียบ" : reportMonthsB.size + " เดือนที่เลือก"}</div>
+              </div>
             </div>
-            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }}>เลือกเดือนที่จะนำมาเปรียบเทียบ (ไม่บังคับ — เพื่อดูปัญหาใหม่/แนวโน้ม)</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", marginBottom: 16, border: "1px solid #2d3148", borderRadius: 8, padding: 8 }}>
-              {monthOptions.length === 0 && <div style={{ color: "#475569", fontSize: 12, padding: "6px 10px" }}>ยังไม่มีข้อมูล</div>}
-              {monthOptions.map(m => {
-                const checked = reportCompareMonths.has(m);
-                return (
-                  <button key={m} onClick={() => setReportCompareMonths(prev => { const next = new Set(prev); if (next.has(m)) next.delete(m); else next.add(m); return next; })}
-                    style={{ ...S.btn, textAlign: "left", padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, background: checked ? "#7c3aed20" : "transparent", color: checked ? "#fff" : "#94a3b8", border: "1px solid " + (checked ? "#7c3aed" : "#2d3148") }}>
-                    <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#7c3aed" : "transparent", border: "1.5px solid " + (checked ? "#7c3aed" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
-                    {monthLabel(m)}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button disabled={reportGenerating} onClick={exportReportPDF} style={{ ...S.btn, flex: 1, background: "#dc2626", color: "#fff", padding: 12, opacity: reportGenerating ? 0.6 : 1 }}>📄 สร้าง PDF</button>
               <button disabled={reportGenerating} onClick={exportReportPPTX} style={{ ...S.btn, flex: 1, background: "#ea580c", color: "#fff", padding: 12, opacity: reportGenerating ? 0.6 : 1 }}>📽️ สร้าง PowerPoint</button>
             </div>

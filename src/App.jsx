@@ -847,18 +847,14 @@ export default function App() {
     items.forEach(i => {
       const cat = productCategory(i.productType);
       if (!cat || !i.tireModel) return;
-      if (!byCategory[cat][i.tireModel]) byCategory[cat][i.tireModel] = { count: 0, sizes: {} };
-      byCategory[cat][i.tireModel].count += 1;
-      const sizeKey = i.tireSize || "ไม่ระบุขนาด";
-      byCategory[cat][i.tireModel].sizes[sizeKey] = (byCategory[cat][i.tireModel].sizes[sizeKey] || 0) + 1;
+      const sizeLabel = i.tireSize ? i.tireSize + " " : "";
+      const key = sizeLabel + i.tireModel; // เช่น "80/90-14 D977"
+      byCategory[cat][key] = (byCategory[cat][key] || 0) + 1;
     });
     const result = {};
     PRODUCT_CATEGORIES.forEach(c => {
       result[c] = Object.entries(byCategory[c])
-        .map(([model, data]) => ({
-          model, count: data.count,
-          sizes: Object.entries(data.sizes).map(([size, count]) => ({ size, count })).sort((a, b) => b.count - a.count),
-        }))
+        .map(([label, count]) => ({ label, count }))
         .sort((a, b) => b.count - a.count).slice(0, 10);
     });
     return result;
@@ -954,10 +950,7 @@ export default function App() {
       const list = (a.topModels && a.topModels[cat]) || [];
       const col = modelCatColors[cat];
       const items = list.length > 0
-        ? list.map((m, i) => {
-            const sizesStr = (m.sizes || []).map(s => s.size + " ×" + s.count).join(", ");
-            return '<div class="modelrow"><span class="modelrank" style="background:' + col + '">' + (i + 1) + '</span><span class="modelname">' + m.model + (sizesStr ? '<div class="modelsizes">' + sizesStr + '</div>' : '') + '</span><span class="modelcount" style="color:' + col + '">' + m.count + '</span></div>';
-          }).join("")
+        ? list.map((m, i) => '<div class="modelrow"><span class="modelrank" style="background:' + col + '">' + (i + 1) + '</span><span class="modelname">' + m.label + '</span><span class="modelcount" style="color:' + col + '">' + m.count + '</span></div>').join("")
         : '<div class="emptynote">ยังไม่มีข้อมูล</div>';
       return '<div class="modelcol"><div class="modelcolhead" style="border-color:' + col + ';color:' + col + '">' + cat + '</div>' + items + '</div>';
     }).join("");
@@ -1005,8 +998,7 @@ export default function App() {
       + '.modelgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}'
       + '.modelcol{border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;}'
       + '.modelcolhead{font-size:12px;font-weight:800;border-bottom:2px solid;padding-bottom:6px;margin-bottom:8px;}'
-      + '.modelrow{display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:12px;border-bottom:1px solid #f8fafc;}'
-      + '.modelsizes{font-size:10px;color:#94a3b8;margin-top:1px;}'
+      + '.modelrow{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;border-bottom:1px solid #f8fafc;}'
       + '.modelrank{width:18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}'
       + '.modelname{flex:1;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
       + '.modelcount{font-weight:800;flex-shrink:0;}'
@@ -1145,7 +1137,7 @@ export default function App() {
       s = pptx.addSlide();
       s.background = { color: "FFFFFF" };
       s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: navy } });
-      s.addText("🔟  เบอร์ยางที่พบปัญหามากสุด", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 20, bold: true, color: "FFFFFF" });
+      s.addText("🔟  ขนาด + เบอร์ยางที่พบปัญหามากสุด", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 20, bold: true, color: "FFFFFF" });
       const modelCatColors = { "Tire MC": red, "Tire BC": blue, "Tube MC": amber, "Tube BC": "8B5CF6" };
       const modelCats = ["Tire MC", "Tire BC", "Tube MC", "Tube BC"];
       const colX = [0.4, 5.15, 0.4, 5.15];
@@ -1160,8 +1152,7 @@ export default function App() {
           const topFive = list.slice(0, 5);
           topFive.forEach((m, i) => {
             const ry = y + 0.42 + i * 0.32;
-            const topSize = (m.sizes && m.sizes[0]) ? " (" + m.sizes[0].size + ")" : "";
-            s.addText((i + 1) + ". " + m.model + topSize, { x: x + 0.15, y: ry, w: 3.3, h: 0.3, fontSize: 9, color: "1E293B" });
+            s.addText((i + 1) + ". " + m.label, { x: x + 0.15, y: ry, w: 3.3, h: 0.3, fontSize: 9, color: "1E293B" });
             s.addText(String(m.count), { x: x + 3.5, y: ry, w: 0.85, h: 0.3, fontSize: 10, bold: true, color: col, align: "right" });
           });
         } else {
@@ -1608,10 +1599,10 @@ export default function App() {
               </Card>
             </div>
 
-            {/* Top 10 เบอร์ยางที่พบปัญหามากสุด แยกตามกลุ่ม พร้อมแยกลายยาง (ขนาดยาง) */}
+            {/* Top 10 ขนาด+เบอร์ยางที่พบปัญหามากสุด แยกตามกลุ่ม */}
             <div style={{ marginTop: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9", marginBottom: 4 }}>🔟 เบอร์ยางที่พบปัญหามากสุด (Top 10 แต่ละกลุ่ม)</div>
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>อ้างอิงจากเบอร์ยาง แล้วแยกย่อยตามขนาด/ลายยาง</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9", marginBottom: 4 }}>🔟 ขนาด + เบอร์ยางที่พบปัญหามากสุด (Top 10 แต่ละกลุ่ม)</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>เช่น 80/90-14 D977 — 3 เคส</div>
               <div className="chart-grid">
                 {PRODUCT_CATEGORIES.map(cat => {
                   const list = topModelsData[cat] || [];
@@ -1621,28 +1612,17 @@ export default function App() {
                       <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: "#6366f1" }}>{cat}</div>
                       {list.length === 0 ? <div style={{ color: "#475569", textAlign: "center", padding: "16px 0", fontSize: 13 }}>ยังไม่มีข้อมูล</div>
                         : list.map((m, i) => (
-                          <div key={i} style={{ marginBottom: 12 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#2d3148", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#6366f1", flexShrink: 0 }}>{i + 1}</div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12 }}>
-                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e2e8f0" }}>{m.model}</span>
-                                  <span style={{ fontWeight: 700, color: "#f1f5f9", flexShrink: 0, marginLeft: 6 }}>{m.count}</span>
-                                </div>
-                                <div style={{ height: 5, background: "#2d3148", borderRadius: 3 }}>
-                                  <div className="bar-purple" style={{ height: "100%", width: (m.count / maxC * 100) + "%", borderRadius: 3 }} />
-                                </div>
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#2d3148", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#6366f1", flexShrink: 0 }}>{i + 1}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12 }}>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e2e8f0" }}>{m.label}</span>
+                                <span style={{ fontWeight: 700, color: "#f1f5f9", flexShrink: 0, marginLeft: 6 }}>{m.count} เคส</span>
+                              </div>
+                              <div style={{ height: 5, background: "#2d3148", borderRadius: 3 }}>
+                                <div className="bar-purple" style={{ height: "100%", width: (m.count / maxC * 100) + "%", borderRadius: 3 }} />
                               </div>
                             </div>
-                            {m.sizes && m.sizes.length > 0 && (
-                              <div style={{ marginLeft: 28, marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                {m.sizes.map((s, si) => (
-                                  <span key={si} style={{ fontSize: 11, background: "#0f1117", border: "1px solid #2d3148", borderRadius: 6, padding: "2px 8px", color: "#94a3b8" }}>
-                                    {s.size} <b style={{ color: "#e2e8f0" }}>×{s.count}</b>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
                           </div>
                         ))}
                     </Card>

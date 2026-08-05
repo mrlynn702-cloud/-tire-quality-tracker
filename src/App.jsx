@@ -383,8 +383,6 @@ const BarChart = ({ title, items, color }) => {
 
 // ---------- PDF document (render ในหน้าเดียวกับแอพ แล้วใช้ window.print) ----------
 // ใช้ origin เดียวกับแอพ รูปจึงโหลดได้ปกติ ไม่ติด CORS
-const PD_ROW_TD1 = "padding:8px 12px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9;";
-const PD_ROW_TD2 = "padding:8px 12px;text-align:center;font-size:13px;border-bottom:1px solid #f1f5f9;";
 const PD = {
   page: { fontFamily: "sans-serif", color: "#1e293b", fontSize: 14, padding: 24, background: "#fff" },
   hdr: { background: "#1a1d27", color: "#fff", padding: "20px 26px", borderRadius: 10, marginBottom: 16, display: "flex", alignItems: "center", gap: 18 },
@@ -881,42 +879,97 @@ export default function App() {
   const exportReportPDF = async () => {
     setReportGenerating(true);
     const a = buildReportAnalysis();
-    const rowsHtml = a.rows.slice(0, 15).map(r => {
-      const trend = r.isNew ? '<span style="color:#f59e0b;font-weight:700;">🆕 ปัญหาใหม่</span>'
-        : r.compare > 0 ? '<span style="color:' + (r.diff > 0 ? "#ef4444" : "#22c55e") + ';font-weight:700;">' + (r.diff > 0 ? "▲" : r.diff < 0 ? "▼" : "-") + " " + Math.abs(r.pctChange) + "%</span>"
-        : "-";
-      return '<tr><td style="' + PD_ROW_TD1 + '">' + r.type + "</td><td style=\"" + PD_ROW_TD2 + "\">" + r.current + "</td><td style=\"" + PD_ROW_TD2 + "\">" + (a.comparePeriodLabel ? r.compare : "-") + "</td><td style=\"" + PD_ROW_TD2 + "\">" + trend + "</td></tr>";
+    const maxCount = Math.max(1, ...a.rows.map(r => r.current));
+    const barColors = ["#e63946", "#1d4ed8", "#8b5cf6", "#f59e0b", "#22c55e", "#06b6d4", "#ec4899", "#64748b"];
+
+    const distributionHtml = a.rows.slice(0, 8).map((r, i) => {
+      const pct = Math.round((r.current / maxCount) * 100);
+      return '<div class="distrow">'
+        + '<div class="distlabel">' + r.type + '</div>'
+        + '<div class="distbarwrap"><div class="distbar" style="width:' + pct + '%;background:' + barColors[i % barColors.length] + ';"></div></div>'
+        + '<div class="distval">' + r.current + '</div>'
+        + '</div>';
     }).join("");
 
-    const focusHtml = a.topIssues.map((r, i) => "<li>" + (i + 1) + ". <b>" + r.type + "</b> — พบ " + r.current + " ครั้ง</li>").join("");
-    const newHtml = a.newIssues.length > 0 ? a.newIssues.map(r => "<li><b>" + r.type + "</b> — เริ่มพบ " + r.current + " ครั้งในช่วงนี้</li>").join("") : "<li style=\"color:#94a3b8\">ไม่พบปัญหาใหม่</li>";
-    const risingHtml = a.risingIssues.length > 0 ? a.risingIssues.map(r => "<li><b>" + r.type + "</b> — เพิ่มขึ้น " + r.pctChange + "% (" + r.compare + " → " + r.current + " ครั้ง)</li>").join("") : "<li style=\"color:#94a3b8\">ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ</li>";
+    const rowsHtml = a.rows.slice(0, 15).map((r, i) => {
+      const trend = r.isNew ? '<span class="badge badge-amber">🆕 ใหม่</span>'
+        : r.compare > 0 ? '<span class="badge ' + (r.diff > 0 ? "badge-red" : r.diff < 0 ? "badge-green" : "badge-gray") + '">' + (r.diff > 0 ? "▲" : r.diff < 0 ? "▼" : "-") + " " + Math.abs(r.pctChange) + "%</span>"
+        : '<span class="badge badge-gray">-</span>';
+      return '<tr style="background:' + (i % 2 === 0 ? "#fff" : "#f8fafc") + ';"><td class="td1">' + r.type + "</td><td class=\"td2\"><b>" + r.current + "</b></td><td class=\"td2\">" + (a.comparePeriodLabel ? r.compare : "-") + "</td><td class=\"td2\">" + trend + "</td></tr>";
+    }).join("");
+
+    const focusHtml = a.topIssues.map((r, i) => {
+      const medals = ["🥇", "🥈", "🥉"];
+      const medal = medals[i] || "▪️";
+      return '<div class="focusitem"><span class="focusmedal">' + medal + '</span><div class="focustext"><b>' + r.type + '</b><div class="focussub">พบ ' + r.current + ' ครั้ง</div></div></div>';
+    }).join("");
+
+    const newHtml = a.newIssues.length > 0
+      ? a.newIssues.map(r => '<div class="pillrow pillrow-amber">🆕 <b>' + r.type + '</b> — เริ่มพบ ' + r.current + ' ครั้งในช่วงนี้</div>').join("")
+      : '<div class="emptynote">ไม่พบปัญหาใหม่</div>';
+    const risingHtml = a.risingIssues.length > 0
+      ? a.risingIssues.map(r => '<div class="pillrow pillrow-red">📈 <b>' + r.type + '</b> — เพิ่มขึ้น ' + r.pctChange + '% (' + r.compare + ' → ' + r.current + ' ครั้ง)</div>').join("")
+      : '<div class="emptynote">ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ</div>';
 
     const logoUrl = "/deestone-logo.png";
     const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><style>'
-      + 'body{font-family:sans-serif;margin:0;padding:24px;color:#1e293b;font-size:14px}'
-      + '.hdr{background:#1a1d27;color:#fff;padding:20px 26px;border-radius:10px;margin-bottom:16px;display:flex;align-items:center;gap:16px}'
-      + '.sec{margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}'
-      + '.sech{background:#f8fafc;padding:8px 14px;font-size:12px;font-weight:700;color:#6366f1;text-transform:uppercase;border-bottom:1px solid #e2e8f0}'
-      + '.secbody{padding:14px}'
-      + 'table{width:100%;border-collapse:collapse}'
-      + 'ul{margin:0;padding-left:20px}'
-      + 'li{margin-bottom:6px}'
-      + '.ftr{margin-top:18px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}'
+      + '*{box-sizing:border-box;}'
+      + 'body{font-family:sans-serif;margin:0;padding:0;color:#1e293b;font-size:14px;background:#fff}'
+      + '.hdr{background:linear-gradient(135deg,#1a1d27,#2d3148);color:#fff;padding:28px 30px;margin-bottom:22px;display:flex;align-items:center;gap:18px;border-bottom:4px solid #e63946;}'
+      + '.hdrtitle{font-size:12px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}'
+      + '.hdrperiod{font-size:24px;font-weight:800;color:#fff;}'
+      + '.hdrcompare{font-size:13px;color:#cbd5e1;margin-top:4px;}'
+      + '.body{padding:0 26px;}'
+      + '.statgrid{display:flex;gap:14px;margin-bottom:22px;}'
+      + '.statcard{flex:1;border-radius:10px;padding:16px 18px;color:#fff;}'
+      + '.statcard-a{background:linear-gradient(135deg,#6366f1,#4338ca);}'
+      + '.statcard-b{background:linear-gradient(135deg,#64748b,#475569);}'
+      + '.statval{font-size:32px;font-weight:800;}'
+      + '.statlabel{font-size:12px;opacity:0.85;margin-top:2px;}'
+      + '.sec{margin-bottom:20px;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);}'
+      + '.sech{background:#1a1d27;color:#fff;padding:10px 16px;font-size:13px;font-weight:700;letter-spacing:0.3px;}'
+      + '.secbody{padding:16px 18px;}'
+      + '.distrow{display:flex;align-items:center;gap:10px;margin-bottom:10px;}'
+      + '.distlabel{width:130px;font-size:12px;color:#475569;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+      + '.distbarwrap{flex:1;background:#f1f5f9;border-radius:6px;height:16px;overflow:hidden;}'
+      + '.distbar{height:100%;border-radius:6px;}'
+      + '.distval{width:28px;text-align:right;font-size:13px;font-weight:700;color:#1e293b;flex-shrink:0;}'
+      + '.focusitem{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f5f9;}'
+      + '.focusitem:last-child{border-bottom:none;}'
+      + '.focusmedal{font-size:22px;width:32px;text-align:center;flex-shrink:0;}'
+      + '.focustext{font-size:14px;}'
+      + '.focussub{font-size:12px;color:#94a3b8;}'
+      + '.pillrow{padding:9px 12px;border-radius:8px;font-size:13px;margin-bottom:8px;}'
+      + '.pillrow-amber{background:#fffbeb;color:#92400e;}'
+      + '.pillrow-red{background:#fef2f2;color:#991b1b;}'
+      + '.emptynote{color:#94a3b8;font-size:13px;font-style:italic;}'
+      + 'table{width:100%;border-collapse:collapse;}'
+      + '.td1{padding:10px 14px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9;}'
+      + '.td2{padding:10px 14px;text-align:center;font-size:13px;border-bottom:1px solid #f1f5f9;}'
+      + 'thead th{background:#f8fafc;padding:9px 14px;font-size:11px;text-transform:uppercase;color:#6366f1;font-weight:700;border-bottom:2px solid #e2e8f0;}'
+      + '.badge{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;}'
+      + '.badge-red{background:#fee2e2;color:#dc2626;} .badge-green{background:#dcfce7;color:#16a34a;}'
+      + '.badge-amber{background:#fef3c7;color:#b45309;} .badge-gray{background:#f1f5f9;color:#64748b;}'
+      + '.ftr{margin-top:6px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding:16px 0 22px;}'
       + '</style></head><body>'
-      + '<div class="hdr"><img src="' + logoUrl + '" style="height:40px;background:#fff;border-radius:6px;padding:4px 8px;" />'
-      + '<div><div style="font-size:11px;color:#94a3b8;">รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง</div>'
-      + '<div style="font-size:20px;font-weight:800;">ช่วง: ' + a.currentPeriodLabel + '</div>'
-      + (a.comparePeriodLabel ? '<div style="font-size:12px;color:#cbd5e1;">เทียบกับ: ' + a.comparePeriodLabel + '</div>' : '') + '</div></div>'
-      + '<div class="sec"><div class="sech">📊 ภาพรวม</div><div class="secbody">พบปัญหาทั้งหมด <b>' + a.currentTotal + '</b> รายการ'
-      + (a.comparePeriodLabel ? ' (ช่วงเทียบ: ' + a.compareTotal + ' รายการ)' : '') + '</div></div>'
-      + '<div class="sec"><div class="sech">🎯 ปัญหาที่ควรโฟกัส (Top 5)</div><div class="secbody"><ul>' + focusHtml + '</ul></div></div>'
-      + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">🆕 ปัญหาที่เพิ่งเริ่มพบ</div><div class="secbody"><ul>' + newHtml + '</ul></div></div>' : '')
-      + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น</div><div class="secbody"><ul>' + risingHtml + '</ul></div></div>' : '')
+      + '<div class="hdr"><img src="' + logoUrl + '" style="height:48px;background:#fff;border-radius:8px;padding:6px 12px;" />'
+      + '<div><div class="hdrtitle">รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง</div>'
+      + '<div class="hdrperiod">' + a.currentPeriodLabel + '</div>'
+      + (a.comparePeriodLabel ? '<div class="hdrcompare">🆚 เทียบกับ: ' + a.comparePeriodLabel + '</div>' : '') + '</div></div>'
+      + '<div class="body">'
+      + '<div class="statgrid">'
+      + '<div class="statcard statcard-a"><div class="statval">' + a.currentTotal + '</div><div class="statlabel">รายการ (ช่วงหลัก)</div></div>'
+      + (a.comparePeriodLabel ? '<div class="statcard statcard-b"><div class="statval">' + a.compareTotal + '</div><div class="statlabel">รายการ (ช่วงเทียบ)</div></div>' : '')
+      + '</div>'
+      + '<div class="sec"><div class="sech">📊 สัดส่วนปัญหาที่พบ</div><div class="secbody">' + distributionHtml + '</div></div>'
+      + '<div class="sec"><div class="sech">🎯 ปัญหาที่ควรโฟกัส</div><div class="secbody">' + focusHtml + '</div></div>'
+      + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">🆕 ปัญหาที่เพิ่งเริ่มพบ</div><div class="secbody">' + newHtml + '</div></div>' : '')
+      + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น</div><div class="secbody">' + risingHtml + '</div></div>' : '')
       + '<div class="sec"><div class="sech">รายละเอียดทั้งหมด</div><table><thead><tr>'
-      + '<th style="' + PD_ROW_TD1 + '">ประเภทปัญหา</th><th style="' + PD_ROW_TD2 + '">จำนวน (ช่วงนี้)</th><th style="' + PD_ROW_TD2 + '">จำนวน (ช่วงเทียบ)</th><th style="' + PD_ROW_TD2 + '">แนวโน้ม</th>'
+      + '<th style="text-align:left;">ประเภทปัญหา</th><th>ช่วงนี้</th><th>ช่วงเทียบ</th><th>แนวโน้ม</th>'
       + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>'
       + '<div class="ftr">Tire Quality Tracker &mdash; Deestone &amp; Bluhorse<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>'
+      + '</div>'
       + '</body></html>';
 
     const container = document.createElement("div");
@@ -928,11 +981,12 @@ export default function App() {
     document.body.appendChild(container);
     try {
       await html2pdf().set({
-        margin: 10,
+        margin: 0,
         filename: "รายงานสรุป_" + a.currentPeriodLabel.replace(/[,\s]/g, "_") + ".pdf",
         image: { type: "jpeg", quality: 0.95 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "avoid-all"] },
       }).from(container).save();
       showToast("สร้างรายงาน PDF สำเร็จ");
     } catch {
@@ -951,76 +1005,126 @@ export default function App() {
       const pptx = new PptxGenJS();
       pptx.defineLayout({ name: "A4", width: 10, height: 5.63 });
       pptx.layout = "A4";
-      const navy = "1A1D27", indigo = "6366F1", red = "EF4444", green = "22C55E", amber = "F59E0B", slate = "64748B";
+      const navy = "1A1D27", indigo = "6366F1", red = "E63946", blue = "1D4ED8",
+        green = "22C55E", amber = "F59E0B", slate = "64748B", light = "F8FAFC";
 
       // สไลด์ 1: หน้าปก
       let s = pptx.addSlide();
       s.background = { color: navy };
-      s.addText("รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง", { x: 0.5, y: 1.8, w: 9, h: 1, fontSize: 28, bold: true, color: "FFFFFF", align: "center" });
-      s.addText("ช่วง: " + a.currentPeriodLabel, { x: 0.5, y: 2.8, w: 9, h: 0.5, fontSize: 18, color: "CBD5E1", align: "center" });
-      if (a.comparePeriodLabel) s.addText("เทียบกับ: " + a.comparePeriodLabel, { x: 0.5, y: 3.3, w: 9, h: 0.4, fontSize: 14, color: "94A3B8", align: "center" });
-      s.addText("Tire Quality Tracker — Deestone & Bluhorse", { x: 0.5, y: 5.0, w: 9, h: 0.4, fontSize: 11, color: "64748B", align: "center" });
+      s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.12, fill: { color: red } });
+      s.addShape(pptx.ShapeType.rect, { x: 0, y: 5.51, w: 10, h: 0.12, fill: { color: blue } });
+      try { s.addImage({ path: "/deestone-logo.png", x: 3.5, y: 1.2, w: 3, h: 0.85, sizing: { type: "contain", w: 3, h: 0.85 } }); } catch {}
+      s.addText("รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง", { x: 0.5, y: 2.4, w: 9, h: 0.7, fontSize: 26, bold: true, color: "FFFFFF", align: "center" });
+      s.addShape(pptx.ShapeType.rect, { x: 4.2, y: 3.1, w: 1.6, h: 0.03, fill: { color: red } });
+      s.addText(a.currentPeriodLabel, { x: 0.5, y: 3.3, w: 9, h: 0.5, fontSize: 18, color: "CBD5E1", align: "center" });
+      if (a.comparePeriodLabel) s.addText("🆚 เทียบกับ " + a.comparePeriodLabel, { x: 0.5, y: 3.8, w: 9, h: 0.4, fontSize: 13, color: "94A3B8", align: "center" });
+      s.addText("Tire Quality Tracker  |  Deestone & Bluhorse", { x: 0.5, y: 4.9, w: 9, h: 0.4, fontSize: 11, color: "64748B", align: "center" });
 
-      // สไลด์ 2: ภาพรวม
+      // สไลด์ 2: ภาพรวม (stat cards)
       s = pptx.addSlide();
-      s.addText("ภาพรวม", { x: 0.4, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: navy });
-      s.addText(String(a.currentTotal), { x: 0.6, y: 1.3, w: 4, h: 1.2, fontSize: 60, bold: true, color: indigo, align: "center" });
-      s.addText("รายการทั้งหมด (ช่วงนี้)", { x: 0.6, y: 2.5, w: 4, h: 0.4, fontSize: 14, color: slate, align: "center" });
+      s.background = { color: "FFFFFF" };
+      s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: navy } });
+      s.addText("📊  ภาพรวม", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 22, bold: true, color: "FFFFFF" });
+      const cardW = a.comparePeriodLabel ? 4.4 : 9;
+      s.addShape(pptx.ShapeType.roundRect, { x: 0.5, y: 1.2, w: cardW, h: 2.2, fill: { color: indigo }, rectRadius: 0.1 });
+      s.addText(String(a.currentTotal), { x: 0.5, y: 1.5, w: cardW, h: 1, fontSize: 54, bold: true, color: "FFFFFF", align: "center" });
+      s.addText("รายการทั้งหมด — ช่วงหลัก", { x: 0.5, y: 2.6, w: cardW, h: 0.4, fontSize: 14, color: "E0E7FF", align: "center" });
+      s.addText(a.currentPeriodLabel, { x: 0.5, y: 3.0, w: cardW, h: 0.3, fontSize: 11, color: "C7D2FE", align: "center" });
       if (a.comparePeriodLabel) {
-        s.addText(String(a.compareTotal), { x: 5.2, y: 1.3, w: 4, h: 1.2, fontSize: 60, bold: true, color: slate, align: "center" });
-        s.addText("รายการทั้งหมด (ช่วงเทียบ)", { x: 5.2, y: 2.5, w: 4, h: 0.4, fontSize: 14, color: slate, align: "center" });
+        s.addShape(pptx.ShapeType.roundRect, { x: 5.1, y: 1.2, w: cardW, h: 2.2, fill: { color: slate }, rectRadius: 0.1 });
+        s.addText(String(a.compareTotal), { x: 5.1, y: 1.5, w: cardW, h: 1, fontSize: 54, bold: true, color: "FFFFFF", align: "center" });
+        s.addText("รายการทั้งหมด — ช่วงเทียบ", { x: 5.1, y: 2.6, w: cardW, h: 0.4, fontSize: 14, color: "E2E8F0", align: "center" });
+        s.addText(a.comparePeriodLabel, { x: 5.1, y: 3.0, w: cardW, h: 0.3, fontSize: 11, color: "CBD5E1", align: "center" });
       }
 
-      // สไลด์ 3: ปัญหาที่ควรโฟกัส
+      // สไลด์ 3: กราฟแท่งสัดส่วนปัญหา (ใช้กราฟจริง)
+      const chartRows = a.rows.slice(0, 8);
+      if (chartRows.length > 0) {
+        s = pptx.addSlide();
+        s.background = { color: "FFFFFF" };
+        s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: navy } });
+        s.addText("📈  สัดส่วนปัญหาที่พบ", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 22, bold: true, color: "FFFFFF" });
+        s.addChart(pptx.ChartType.bar, [{
+          name: "จำนวนครั้งที่พบ",
+          labels: chartRows.map(r => r.type),
+          values: chartRows.map(r => r.current),
+        }], {
+          x: 0.4, y: 0.95, w: 9.2, h: 4.3,
+          barDir: "bar",
+          chartColors: [indigo],
+          showLegend: false,
+          showValue: true,
+          dataLabelColor: "1E293B",
+          dataLabelFontSize: 11,
+          catAxisLabelFontSize: 11,
+          valAxisLabelFontSize: 10,
+          barGapWidthPct: 30,
+        });
+      }
+
+      // สไลด์ 4: ปัญหาที่ควรโฟกัส
       s = pptx.addSlide();
-      s.addText("🎯 ปัญหาที่ควรโฟกัส (Top 5)", { x: 0.4, y: 0.3, w: 9, h: 0.6, fontSize: 22, bold: true, color: navy });
-      const focusRows = a.topIssues.map((r, i) => [
-        { text: String(i + 1), options: { color: indigo, bold: true } },
-        { text: r.type, options: { color: "1E293B" } },
-        { text: String(r.current) + " ครั้ง", options: { color: indigo, bold: true, align: "right" } },
-      ]);
-      if (focusRows.length > 0) {
-        s.addTable(focusRows, { x: 0.4, y: 1.1, w: 9.2, colW: [0.6, 6.8, 1.8], fontSize: 14, border: { type: "solid", color: "E2E8F0", pt: 1 }, autoPage: false });
+      s.background = { color: "FFFFFF" };
+      s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: navy } });
+      s.addText("🎯  ปัญหาที่ควรโฟกัส", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 22, bold: true, color: "FFFFFF" });
+      if (a.topIssues.length > 0) {
+        const medalColors = [amber, "B0B8C4", "C97B3D"];
+        a.topIssues.forEach((r, i) => {
+          const y = 1.0 + i * 0.85;
+          s.addShape(pptx.ShapeType.roundRect, { x: 0.4, y, w: 9.2, h: 0.7, fill: { color: light }, rectRadius: 0.06 });
+          s.addShape(pptx.ShapeType.ellipse, { x: 0.55, y: y + 0.12, w: 0.46, h: 0.46, fill: { color: i < 3 ? medalColors[i] : slate } });
+          s.addText(String(i + 1), { x: 0.55, y: y + 0.12, w: 0.46, h: 0.46, fontSize: 16, bold: true, color: "FFFFFF", align: "center", valign: "middle" });
+          s.addText(r.type, { x: 1.2, y: y + 0.08, w: 6.5, h: 0.5, fontSize: 15, bold: true, color: navy, valign: "middle" });
+          s.addText(String(r.current) + " ครั้ง", { x: 7.7, y: y + 0.08, w: 1.7, h: 0.5, fontSize: 15, bold: true, color: indigo, align: "right", valign: "middle" });
+        });
       } else {
-        s.addText("ยังไม่มีข้อมูลในช่วงนี้", { x: 0.4, y: 1.5, fontSize: 14, color: slate });
+        s.addText("ยังไม่มีข้อมูลในช่วงนี้", { x: 0.4, y: 1.2, fontSize: 14, color: slate });
       }
 
-      // สไลด์ 4: ปัญหาใหม่ + แนวโน้มเพิ่มขึ้น (เฉพาะเมื่อมีช่วงเทียบ)
+      // สไลด์ 5: ปัญหาใหม่ + แนวโน้มเพิ่มขึ้น (เฉพาะเมื่อมีช่วงเทียบ)
       if (a.comparePeriodLabel) {
         s = pptx.addSlide();
-        s.addText("🆕 ปัญหาที่เพิ่งเริ่มพบ", { x: 0.4, y: 0.3, w: 9, h: 0.5, fontSize: 20, bold: true, color: navy });
+        s.background = { color: "FFFFFF" };
+        s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: navy } });
+        s.addText("🆕  ปัญหาใหม่ & แนวโน้มเพิ่มขึ้น", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 20, bold: true, color: "FFFFFF" });
+        s.addText("🆕 ปัญหาที่เพิ่งเริ่มพบ", { x: 0.4, y: 0.95, w: 4.4, h: 0.35, fontSize: 14, bold: true, color: amber });
         if (a.newIssues.length > 0) {
           a.newIssues.forEach((r, i) => {
-            s.addText("• " + r.type + "  —  พบ " + r.current + " ครั้ง", { x: 0.6, y: 0.95 + i * 0.4, w: 8.8, h: 0.4, fontSize: 14, color: amber });
+            const y = 1.35 + i * 0.55;
+            s.addShape(pptx.ShapeType.roundRect, { x: 0.4, y, w: 4.4, h: 0.48, fill: { color: "FFFBEB" }, rectRadius: 0.06 });
+            s.addText(r.type + "  (" + r.current + ")", { x: 0.55, y, w: 4.1, h: 0.48, fontSize: 12, color: "92400E", valign: "middle" });
           });
         } else {
-          s.addText("ไม่พบปัญหาใหม่ในช่วงนี้", { x: 0.6, y: 1.0, fontSize: 14, color: slate });
+          s.addText("ไม่พบปัญหาใหม่", { x: 0.4, y: 1.35, fontSize: 12, color: slate });
         }
-        const risingY = 0.95 + Math.max(a.newIssues.length, 1) * 0.4 + 0.5;
-        s.addText("📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น", { x: 0.4, y: risingY, w: 9, h: 0.5, fontSize: 20, bold: true, color: navy });
+        s.addText("📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น", { x: 5.1, y: 0.95, w: 4.4, h: 0.35, fontSize: 14, bold: true, color: red });
         if (a.risingIssues.length > 0) {
           a.risingIssues.forEach((r, i) => {
-            s.addText("• " + r.type + "  —  เพิ่มขึ้น " + r.pctChange + "% (" + r.compare + " → " + r.current + ")", { x: 0.6, y: risingY + 0.65 + i * 0.4, w: 8.8, h: 0.4, fontSize: 14, color: red });
+            const y = 1.35 + i * 0.55;
+            s.addShape(pptx.ShapeType.roundRect, { x: 5.1, y, w: 4.4, h: 0.48, fill: { color: "FEF2F2" }, rectRadius: 0.06 });
+            s.addText(r.type + "  +" + r.pctChange + "%", { x: 5.25, y, w: 4.1, h: 0.48, fontSize: 12, color: "991B1B", valign: "middle" });
           });
         } else {
-          s.addText("ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ", { x: 0.6, y: risingY + 0.65, fontSize: 14, color: slate });
+          s.addText("ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ", { x: 5.1, y: 1.35, fontSize: 12, color: slate });
         }
       }
 
-      // สไลด์ 5: ตารางรายละเอียดทั้งหมด
+      // สไลด์ 6: ตารางรายละเอียดทั้งหมด
       s = pptx.addSlide();
-      s.addText("รายละเอียดทั้งหมด", { x: 0.4, y: 0.3, w: 9, h: 0.5, fontSize: 20, bold: true, color: navy });
+      s.background = { color: "FFFFFF" };
+      s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 10, h: 0.7, fill: { color: navy } });
+      s.addText("📋  รายละเอียดทั้งหมด", { x: 0.4, y: 0.12, w: 9, h: 0.5, fontSize: 20, bold: true, color: "FFFFFF" });
       const headRow = [
-        { text: "ประเภทปัญหา", options: { bold: true, color: "FFFFFF", fill: { color: indigo } } },
-        { text: "ช่วงนี้", options: { bold: true, color: "FFFFFF", fill: { color: indigo }, align: "center" } },
-        { text: "ช่วงเทียบ", options: { bold: true, color: "FFFFFF", fill: { color: indigo }, align: "center" } },
-        { text: "แนวโน้ม", options: { bold: true, color: "FFFFFF", fill: { color: indigo }, align: "center" } },
+        { text: "ประเภทปัญหา", options: { bold: true, color: "FFFFFF", fill: { color: red } } },
+        { text: "ช่วงนี้", options: { bold: true, color: "FFFFFF", fill: { color: red }, align: "center" } },
+        { text: "ช่วงเทียบ", options: { bold: true, color: "FFFFFF", fill: { color: red }, align: "center" } },
+        { text: "แนวโน้ม", options: { bold: true, color: "FFFFFF", fill: { color: red }, align: "center" } },
       ];
-      const bodyRows = a.rows.slice(0, 12).map(r => [
-        { text: r.type, options: { color: "1E293B" } },
-        { text: String(r.current), options: { align: "center" } },
-        { text: a.comparePeriodLabel ? String(r.compare) : "-", options: { align: "center" } },
-        { text: r.isNew ? "ใหม่" : (r.compare > 0 ? (r.diff > 0 ? "+" : "") + r.pctChange + "%" : "-"), options: { align: "center", color: r.isNew ? amber : (r.diff > 0 ? red : r.diff < 0 ? green : "64748B") } },
+      const bodyRows = a.rows.slice(0, 12).map((r, i) => [
+        { text: r.type, options: { color: "1E293B", fill: { color: i % 2 === 0 ? "FFFFFF" : light } } },
+        { text: String(r.current), options: { align: "center", fill: { color: i % 2 === 0 ? "FFFFFF" : light } } },
+        { text: a.comparePeriodLabel ? String(r.compare) : "-", options: { align: "center", fill: { color: i % 2 === 0 ? "FFFFFF" : light } } },
+        { text: r.isNew ? "ใหม่" : (r.compare > 0 ? (r.diff > 0 ? "+" : "") + r.pctChange + "%" : "-"), options: { align: "center", bold: true, color: r.isNew ? amber : (r.diff > 0 ? red : r.diff < 0 ? green : slate), fill: { color: i % 2 === 0 ? "FFFFFF" : light } } },
       ]);
       s.addTable([headRow, ...bodyRows], { x: 0.4, y: 0.9, w: 9.2, colW: [5, 1.4, 1.4, 1.4], fontSize: 12, border: { type: "solid", color: "E2E8F0", pt: 1 }, autoPage: false });
 

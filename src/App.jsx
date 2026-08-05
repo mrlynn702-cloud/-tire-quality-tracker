@@ -537,7 +537,8 @@ export default function App() {
   const [fBrand, setFBrand] = useState("ทั้งหมด");
   const [fIssue, setFIssue] = useState("ทั้งหมด");
   const [fProd, setFProd] = useState("ทั้งหมด");
-  const [fMonth, setFMonth] = useState("ทั้งปี");
+  const [fMonths, setFMonths] = useState(new Set()); // ว่าง = ทั้งปี
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [sel, setSel] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [printIssue, setPrintIssue] = useState(null);
@@ -683,8 +684,8 @@ export default function App() {
       && (fBrand === "ทั้งหมด" || i.brand === fBrand)
       && (fIssue === "ทั้งหมด" || (i.issueTypes || []).includes(fIssue))
       && (fProd === "ทั้งหมด" || i.productType === fProd)
-      && (fMonth === "ทั้งปี" || (i.date || "").slice(0, 7) === fMonth);
-  }), [issues, search, fBrand, fIssue, fProd, fMonth]);
+      && (fMonths.size === 0 || fMonths.has((i.date || "").slice(0, 7)));
+  }), [issues, search, fBrand, fIssue, fProd, fMonths]);
 
   // รายการทั้งหมดสำหรับหน้ารายการ (รวมที่ยกเลิกแล้ว แต่ขีดฆ่า)
   const listItems = useMemo(() => issues.filter(i => {
@@ -693,8 +694,8 @@ export default function App() {
       && (fBrand === "ทั้งหมด" || i.brand === fBrand)
       && (fIssue === "ทั้งหมด" || (i.issueTypes || []).includes(fIssue))
       && (fProd === "ทั้งหมด" || i.productType === fProd)
-      && (fMonth === "ทั้งปี" || (i.date || "").slice(0, 7) === fMonth);
-  }), [issues, search, fBrand, fIssue, fProd, fMonth]);
+      && (fMonths.size === 0 || fMonths.has((i.date || "").slice(0, 7)));
+  }), [issues, search, fBrand, fIssue, fProd, fMonths]);
 
   // เดือนที่มีข้อมูล (สำหรับ dropdown) — รูปแบบ YYYY-MM
   const monthOptions = useMemo(() => {
@@ -814,7 +815,7 @@ export default function App() {
   const ptCounts = PRODUCT_TYPES.map(t => ({ t, c: filtered.filter(i => i.productType === t).length }));
   const pvCounts = [...new Set(filtered.map(i => i.province))].map(p => ({ p, c: filtered.filter(i => i.province === p).length })).sort((a, b) => b.c - a.c).slice(0, 5);
   const needsDist = NEEDS_DIST.includes(form.shopTier);
-  const hasFilters = search || fBrand !== "ทั้งหมด" || fIssue !== "ทั้งหมด" || fProd !== "ทั้งหมด" || fMonth !== "ทั้งปี";
+  const hasFilters = search || fBrand !== "ทั้งหมด" || fIssue !== "ทั้งหมด" || fProd !== "ทั้งหมด" || fMonths.size > 0;
 
   // นับจำนวนแต่ละประเภทปัญหา (Top 5) สำหรับกราฟ
   const issueTypeCounts = useMemo(() => {
@@ -992,7 +993,12 @@ export default function App() {
     }
   };
 
-  const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonth("ทั้งปี"); };
+  const clearFilters = () => { setSearch(""); setFBrand("ทั้งหมด"); setFIssue("ทั้งหมด"); setFProd("ทั้งหมด"); setFMonths(new Set()); };
+  const toggleMonth = (m) => setFMonths(prev => {
+    const next = new Set(prev);
+    if (next.has(m)) next.delete(m); else next.add(m);
+    return next;
+  });
 
   return (
     <div style={S.page}>
@@ -1043,10 +1049,34 @@ export default function App() {
               </div>
               <div className="filter-row">
                 <input style={{ ...S.inp, width: 180 }} placeholder="🔍 ค้นหา รุ่น, ร้าน, จังหวัด..." value={search} onChange={e => setSearch(e.target.value)} />
-                <select style={{ ...S.inp, width: 140 }} value={fMonth} onChange={e => setFMonth(e.target.value)}>
-                  <option value="ทั้งปี">📅 ทั้งปี</option>
-                  {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-                </select>
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setShowMonthPicker(v => !v)} style={{ ...S.inp, width: 170, textAlign: "left", cursor: "pointer", background: "#0f1117", color: fMonths.size > 0 ? "#e2e8f0" : "#94a3b8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>📅 {fMonths.size === 0 ? "ทั้งปี" : fMonths.size === 1 ? monthLabel([...fMonths][0]) : fMonths.size + " เดือนที่เลือก"}</span>
+                    <span style={{ fontSize: 10 }}>▾</span>
+                  </button>
+                  {showMonthPicker && (
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 10, padding: 10, width: "max(220px, 60vw)", maxWidth: "calc(100vw - 32px)", maxHeight: 320, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                      <button onClick={() => { setFMonths(new Set()); setShowMonthPicker(false); }}
+                        style={{ ...S.btn, width: "100%", textAlign: "left", padding: "8px 10px", marginBottom: 6, background: fMonths.size === 0 ? "#6366f120" : "transparent", color: fMonths.size === 0 ? "#fff" : "#94a3b8", border: "1px solid " + (fMonths.size === 0 ? "#6366f1" : "#2d3148") }}>
+                        📅 ทั้งปี
+                      </button>
+                      {monthOptions.length === 0 && <div style={{ color: "#475569", fontSize: 12, padding: "6px 10px" }}>ยังไม่มีข้อมูล</div>}
+                      {monthOptions.map(m => {
+                        const checked = fMonths.has(m);
+                        return (
+                          <button key={m} onClick={() => toggleMonth(m)}
+                            style={{ ...S.btn, width: "100%", textAlign: "left", padding: "8px 10px", marginBottom: 4, display: "flex", alignItems: "center", gap: 8, background: checked ? "#6366f120" : "transparent", color: checked ? "#fff" : "#94a3b8", border: "1px solid " + (checked ? "#6366f1" : "#2d3148") }}>
+                            <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#6366f1" : "transparent", border: "1.5px solid " + (checked ? "#6366f1" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
+                            {monthLabel(m)}
+                          </button>
+                        );
+                      })}
+                      {fMonths.size > 0 && (
+                        <button onClick={() => setShowMonthPicker(false)} style={{ ...S.btn, width: "100%", marginTop: 6, background: "#6366f1", color: "#fff", padding: "8px 10px" }}>เสร็จสิ้น</button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <select style={{ ...S.inp, width: 130 }} value={fBrand} onChange={e => setFBrand(e.target.value)}>
                   <option>ทั้งหมด</option>{BRANDS.map(b => <option key={b}>{b}</option>)}
                 </select>

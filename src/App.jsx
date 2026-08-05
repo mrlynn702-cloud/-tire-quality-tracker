@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import html2pdf from "html2pdf.js";
+import PptxGenJS from "pptxgenjs";
 
 const SUPABASE_URL = "https://xygvrhzvieulmexyjxuv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wCNv0fp4POlUtncwJrug5g_6dNLyXbU";
@@ -382,6 +383,8 @@ const BarChart = ({ title, items, color }) => {
 
 // ---------- PDF document (render ในหน้าเดียวกับแอพ แล้วใช้ window.print) ----------
 // ใช้ origin เดียวกับแอพ รูปจึงโหลดได้ปกติ ไม่ติด CORS
+const PD_ROW_TD1 = "padding:8px 12px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9;";
+const PD_ROW_TD2 = "padding:8px 12px;text-align:center;font-size:13px;border-bottom:1px solid #f1f5f9;";
 const PD = {
   page: { fontFamily: "sans-serif", color: "#1e293b", fontSize: 14, padding: 24, background: "#fff" },
   hdr: { background: "#1a1d27", color: "#fff", padding: "20px 26px", borderRadius: 10, marginBottom: 16, display: "flex", alignItems: "center", gap: 18 },
@@ -539,6 +542,9 @@ export default function App() {
   const [fProd, setFProd] = useState("ทั้งหมด");
   const [fMonths, setFMonths] = useState(new Set()); // ว่าง = ทั้งปี
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportCompareMonths, setReportCompareMonths] = useState(new Set());
+  const [reportGenerating, setReportGenerating] = useState(false);
   const [sel, setSel] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [printIssue, setPrintIssue] = useState(null);
@@ -824,6 +830,206 @@ export default function App() {
     return Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
   }, [filtered]);
 
+  // นับจำนวนปัญหาทั้งหมด (ไม่จำกัด Top 5) จากชุดข้อมูลใดๆ ที่ระบุ — ใช้สำหรับสร้างรายงานเปรียบเทียบ
+  const countIssueTypes = (items) => {
+    const counts = {};
+    items.forEach(i => (i.issueTypes || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
+    return counts;
+  };
+
+  const openReportModal = () => {
+    setReportCompareMonths(new Set());
+    setShowReportModal(true);
+  };
+
+  // วิเคราะห์ข้อมูล: ช่วงปัจจุบัน (ตาม filter เดือนใน Dashboard) เทียบกับช่วงที่เลือกเปรียบเทียบ
+  const buildReportAnalysis = () => {
+    const currentItems = filtered; // ช่วงที่กำลังดู (ตาม fMonths ที่เลือกไว้)
+    const compareItems = reportCompareMonths.size > 0
+      ? issues.filter(i => !i.cancelled && reportCompareMonths.has((i.date || "").slice(0, 7)))
+      : [];
+
+    const currentCounts = countIssueTypes(currentItems);
+    const compareCounts = countIssueTypes(compareItems);
+    const allTypes = [...new Set([...Object.keys(currentCounts), ...Object.keys(compareCounts)])];
+
+    const rows = allTypes.map(t => {
+      const cur = currentCounts[t] || 0;
+      const cmp = compareCounts[t] || 0;
+      const isNew = cmp === 0 && cur > 0 && compareItems.length > 0;
+      const diff = cur - cmp;
+      const pctChange = cmp > 0 ? Math.round((diff / cmp) * 100) : (cur > 0 ? 100 : 0);
+      return { type: t, current: cur, compare: cmp, diff, pctChange, isNew };
+    }).sort((a, b) => b.current - a.current);
+
+    const currentPeriodLabel = fMonths.size === 0 ? "ทั้งปี" : [...fMonths].sort().map(monthLabel).join(", ");
+    const comparePeriodLabel = reportCompareMonths.size === 0 ? null : [...reportCompareMonths].sort().map(monthLabel).join(", ");
+
+    return {
+      rows, currentPeriodLabel, comparePeriodLabel,
+      currentTotal: currentItems.length, compareTotal: compareItems.length,
+      topIssues: rows.filter(r => r.current > 0).slice(0, 5),
+      newIssues: rows.filter(r => r.isNew),
+      risingIssues: rows.filter(r => r.compare > 0 && r.pctChange >= 30).sort((a, b) => b.pctChange - a.pctChange).slice(0, 5),
+    };
+  };
+
+  const exportReportPDF = async () => {
+    setReportGenerating(true);
+    const a = buildReportAnalysis();
+    const rowsHtml = a.rows.slice(0, 15).map(r => {
+      const trend = r.isNew ? '<span style="color:#f59e0b;font-weight:700;">🆕 ปัญหาใหม่</span>'
+        : r.compare > 0 ? '<span style="color:' + (r.diff > 0 ? "#ef4444" : "#22c55e") + ';font-weight:700;">' + (r.diff > 0 ? "▲" : r.diff < 0 ? "▼" : "-") + " " + Math.abs(r.pctChange) + "%</span>"
+        : "-";
+      return '<tr><td style="' + PD_ROW_TD1 + '">' + r.type + "</td><td style=\"" + PD_ROW_TD2 + "\">" + r.current + "</td><td style=\"" + PD_ROW_TD2 + "\">" + (a.comparePeriodLabel ? r.compare : "-") + "</td><td style=\"" + PD_ROW_TD2 + "\">" + trend + "</td></tr>";
+    }).join("");
+
+    const focusHtml = a.topIssues.map((r, i) => "<li>" + (i + 1) + ". <b>" + r.type + "</b> — พบ " + r.current + " ครั้ง</li>").join("");
+    const newHtml = a.newIssues.length > 0 ? a.newIssues.map(r => "<li><b>" + r.type + "</b> — เริ่มพบ " + r.current + " ครั้งในช่วงนี้</li>").join("") : "<li style=\"color:#94a3b8\">ไม่พบปัญหาใหม่</li>";
+    const risingHtml = a.risingIssues.length > 0 ? a.risingIssues.map(r => "<li><b>" + r.type + "</b> — เพิ่มขึ้น " + r.pctChange + "% (" + r.compare + " → " + r.current + " ครั้ง)</li>").join("") : "<li style=\"color:#94a3b8\">ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ</li>";
+
+    const logoUrl = "/deestone-logo.png";
+    const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><style>'
+      + 'body{font-family:sans-serif;margin:0;padding:24px;color:#1e293b;font-size:14px}'
+      + '.hdr{background:#1a1d27;color:#fff;padding:20px 26px;border-radius:10px;margin-bottom:16px;display:flex;align-items:center;gap:16px}'
+      + '.sec{margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}'
+      + '.sech{background:#f8fafc;padding:8px 14px;font-size:12px;font-weight:700;color:#6366f1;text-transform:uppercase;border-bottom:1px solid #e2e8f0}'
+      + '.secbody{padding:14px}'
+      + 'table{width:100%;border-collapse:collapse}'
+      + 'ul{margin:0;padding-left:20px}'
+      + 'li{margin-bottom:6px}'
+      + '.ftr{margin-top:18px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}'
+      + '</style></head><body>'
+      + '<div class="hdr"><img src="' + logoUrl + '" style="height:40px;background:#fff;border-radius:6px;padding:4px 8px;" />'
+      + '<div><div style="font-size:11px;color:#94a3b8;">รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง</div>'
+      + '<div style="font-size:20px;font-weight:800;">ช่วง: ' + a.currentPeriodLabel + '</div>'
+      + (a.comparePeriodLabel ? '<div style="font-size:12px;color:#cbd5e1;">เทียบกับ: ' + a.comparePeriodLabel + '</div>' : '') + '</div></div>'
+      + '<div class="sec"><div class="sech">📊 ภาพรวม</div><div class="secbody">พบปัญหาทั้งหมด <b>' + a.currentTotal + '</b> รายการ'
+      + (a.comparePeriodLabel ? ' (ช่วงเทียบ: ' + a.compareTotal + ' รายการ)' : '') + '</div></div>'
+      + '<div class="sec"><div class="sech">🎯 ปัญหาที่ควรโฟกัส (Top 5)</div><div class="secbody"><ul>' + focusHtml + '</ul></div></div>'
+      + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">🆕 ปัญหาที่เพิ่งเริ่มพบ</div><div class="secbody"><ul>' + newHtml + '</ul></div></div>' : '')
+      + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น</div><div class="secbody"><ul>' + risingHtml + '</ul></div></div>' : '')
+      + '<div class="sec"><div class="sech">รายละเอียดทั้งหมด</div><table><thead><tr>'
+      + '<th style="' + PD_ROW_TD1 + '">ประเภทปัญหา</th><th style="' + PD_ROW_TD2 + '">จำนวน (ช่วงนี้)</th><th style="' + PD_ROW_TD2 + '">จำนวน (ช่วงเทียบ)</th><th style="' + PD_ROW_TD2 + '">แนวโน้ม</th>'
+      + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>'
+      + '<div class="ftr">Tire Quality Tracker &mdash; Deestone &amp; Bluhorse<br/>&copy; ' + new Date().getFullYear() + ' Deestone Co., Ltd. | Developed by Apiwich Ruangsrisoragrai &mdash; 2W</div>'
+      + '</body></html>';
+
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.width = "794px";
+    container.style.background = "#fff";
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    try {
+      await html2pdf().set({
+        margin: 10,
+        filename: "รายงานสรุป_" + a.currentPeriodLabel.replace(/[,\s]/g, "_") + ".pdf",
+        image: { type: "jpeg", quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      }).from(container).save();
+      showToast("สร้างรายงาน PDF สำเร็จ");
+    } catch {
+      showToast("สร้างรายงานไม่สำเร็จ กรุณาลองใหม่", "err");
+    } finally {
+      document.body.removeChild(container);
+      setReportGenerating(false);
+      setShowReportModal(false);
+    }
+  };
+
+  const exportReportPPTX = async () => {
+    setReportGenerating(true);
+    try {
+      const a = buildReportAnalysis();
+      const pptx = new PptxGenJS();
+      pptx.defineLayout({ name: "A4", width: 10, height: 5.63 });
+      pptx.layout = "A4";
+      const navy = "1A1D27", indigo = "6366F1", red = "EF4444", green = "22C55E", amber = "F59E0B", slate = "64748B";
+
+      // สไลด์ 1: หน้าปก
+      let s = pptx.addSlide();
+      s.background = { color: navy };
+      s.addText("รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง", { x: 0.5, y: 1.8, w: 9, h: 1, fontSize: 28, bold: true, color: "FFFFFF", align: "center" });
+      s.addText("ช่วง: " + a.currentPeriodLabel, { x: 0.5, y: 2.8, w: 9, h: 0.5, fontSize: 18, color: "CBD5E1", align: "center" });
+      if (a.comparePeriodLabel) s.addText("เทียบกับ: " + a.comparePeriodLabel, { x: 0.5, y: 3.3, w: 9, h: 0.4, fontSize: 14, color: "94A3B8", align: "center" });
+      s.addText("Tire Quality Tracker — Deestone & Bluhorse", { x: 0.5, y: 5.0, w: 9, h: 0.4, fontSize: 11, color: "64748B", align: "center" });
+
+      // สไลด์ 2: ภาพรวม
+      s = pptx.addSlide();
+      s.addText("ภาพรวม", { x: 0.4, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: navy });
+      s.addText(String(a.currentTotal), { x: 0.6, y: 1.3, w: 4, h: 1.2, fontSize: 60, bold: true, color: indigo, align: "center" });
+      s.addText("รายการทั้งหมด (ช่วงนี้)", { x: 0.6, y: 2.5, w: 4, h: 0.4, fontSize: 14, color: slate, align: "center" });
+      if (a.comparePeriodLabel) {
+        s.addText(String(a.compareTotal), { x: 5.2, y: 1.3, w: 4, h: 1.2, fontSize: 60, bold: true, color: slate, align: "center" });
+        s.addText("รายการทั้งหมด (ช่วงเทียบ)", { x: 5.2, y: 2.5, w: 4, h: 0.4, fontSize: 14, color: slate, align: "center" });
+      }
+
+      // สไลด์ 3: ปัญหาที่ควรโฟกัส
+      s = pptx.addSlide();
+      s.addText("🎯 ปัญหาที่ควรโฟกัส (Top 5)", { x: 0.4, y: 0.3, w: 9, h: 0.6, fontSize: 22, bold: true, color: navy });
+      const focusRows = a.topIssues.map((r, i) => [
+        { text: String(i + 1), options: { color: indigo, bold: true } },
+        { text: r.type, options: { color: "1E293B" } },
+        { text: String(r.current) + " ครั้ง", options: { color: indigo, bold: true, align: "right" } },
+      ]);
+      if (focusRows.length > 0) {
+        s.addTable(focusRows, { x: 0.4, y: 1.1, w: 9.2, colW: [0.6, 6.8, 1.8], fontSize: 14, border: { type: "solid", color: "E2E8F0", pt: 1 }, autoPage: false });
+      } else {
+        s.addText("ยังไม่มีข้อมูลในช่วงนี้", { x: 0.4, y: 1.5, fontSize: 14, color: slate });
+      }
+
+      // สไลด์ 4: ปัญหาใหม่ + แนวโน้มเพิ่มขึ้น (เฉพาะเมื่อมีช่วงเทียบ)
+      if (a.comparePeriodLabel) {
+        s = pptx.addSlide();
+        s.addText("🆕 ปัญหาที่เพิ่งเริ่มพบ", { x: 0.4, y: 0.3, w: 9, h: 0.5, fontSize: 20, bold: true, color: navy });
+        if (a.newIssues.length > 0) {
+          a.newIssues.forEach((r, i) => {
+            s.addText("• " + r.type + "  —  พบ " + r.current + " ครั้ง", { x: 0.6, y: 0.95 + i * 0.4, w: 8.8, h: 0.4, fontSize: 14, color: amber });
+          });
+        } else {
+          s.addText("ไม่พบปัญหาใหม่ในช่วงนี้", { x: 0.6, y: 1.0, fontSize: 14, color: slate });
+        }
+        const risingY = 0.95 + Math.max(a.newIssues.length, 1) * 0.4 + 0.5;
+        s.addText("📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น", { x: 0.4, y: risingY, w: 9, h: 0.5, fontSize: 20, bold: true, color: navy });
+        if (a.risingIssues.length > 0) {
+          a.risingIssues.forEach((r, i) => {
+            s.addText("• " + r.type + "  —  เพิ่มขึ้น " + r.pctChange + "% (" + r.compare + " → " + r.current + ")", { x: 0.6, y: risingY + 0.65 + i * 0.4, w: 8.8, h: 0.4, fontSize: 14, color: red });
+          });
+        } else {
+          s.addText("ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ", { x: 0.6, y: risingY + 0.65, fontSize: 14, color: slate });
+        }
+      }
+
+      // สไลด์ 5: ตารางรายละเอียดทั้งหมด
+      s = pptx.addSlide();
+      s.addText("รายละเอียดทั้งหมด", { x: 0.4, y: 0.3, w: 9, h: 0.5, fontSize: 20, bold: true, color: navy });
+      const headRow = [
+        { text: "ประเภทปัญหา", options: { bold: true, color: "FFFFFF", fill: { color: indigo } } },
+        { text: "ช่วงนี้", options: { bold: true, color: "FFFFFF", fill: { color: indigo }, align: "center" } },
+        { text: "ช่วงเทียบ", options: { bold: true, color: "FFFFFF", fill: { color: indigo }, align: "center" } },
+        { text: "แนวโน้ม", options: { bold: true, color: "FFFFFF", fill: { color: indigo }, align: "center" } },
+      ];
+      const bodyRows = a.rows.slice(0, 12).map(r => [
+        { text: r.type, options: { color: "1E293B" } },
+        { text: String(r.current), options: { align: "center" } },
+        { text: a.comparePeriodLabel ? String(r.compare) : "-", options: { align: "center" } },
+        { text: r.isNew ? "ใหม่" : (r.compare > 0 ? (r.diff > 0 ? "+" : "") + r.pctChange + "%" : "-"), options: { align: "center", color: r.isNew ? amber : (r.diff > 0 ? red : r.diff < 0 ? green : "64748B") } },
+      ]);
+      s.addTable([headRow, ...bodyRows], { x: 0.4, y: 0.9, w: 9.2, colW: [5, 1.4, 1.4, 1.4], fontSize: 12, border: { type: "solid", color: "E2E8F0", pt: 1 }, autoPage: false });
+
+      await pptx.writeFile({ fileName: "รายงานสรุป_" + a.currentPeriodLabel.replace(/[,\s]/g, "_") + ".pptx" });
+      showToast("สร้างรายงาน PowerPoint สำเร็จ");
+    } catch {
+      showToast("สร้างรายงานไม่สำเร็จ กรุณาลองใหม่", "err");
+    } finally {
+      setReportGenerating(false);
+      setShowReportModal(false);
+    }
+  };
+
   const navGo = (v) => { setView(v); setSel(null); setPreviewMode(false); setSelectedIds(new Set()); };
 
   const openDetail = (issue) => {
@@ -1016,6 +1222,37 @@ export default function App() {
 
       {toast && <div className={"toast toast-" + toast.type}>{toast.msg}</div>}
 
+      {showReportModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => !reportGenerating && setShowReportModal(false)}>
+          <div style={{ ...S.card, maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, color: "#7c3aed", fontSize: 16, marginBottom: 6 }}>📊 สร้างรายงานสรุป</div>
+            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 16 }}>
+              ช่วงที่กำลังดูอยู่: <b style={{ color: "#e2e8f0" }}>{fMonths.size === 0 ? "ทั้งปี" : [...fMonths].sort().map(monthLabel).join(", ")}</b>
+            </div>
+            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }}>เลือกเดือนที่จะนำมาเปรียบเทียบ (ไม่บังคับ — เพื่อดูปัญหาใหม่/แนวโน้ม)</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", marginBottom: 16, border: "1px solid #2d3148", borderRadius: 8, padding: 8 }}>
+              {monthOptions.length === 0 && <div style={{ color: "#475569", fontSize: 12, padding: "6px 10px" }}>ยังไม่มีข้อมูล</div>}
+              {monthOptions.map(m => {
+                const checked = reportCompareMonths.has(m);
+                return (
+                  <button key={m} onClick={() => setReportCompareMonths(prev => { const next = new Set(prev); if (next.has(m)) next.delete(m); else next.add(m); return next; })}
+                    style={{ ...S.btn, textAlign: "left", padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, background: checked ? "#7c3aed20" : "transparent", color: checked ? "#fff" : "#94a3b8", border: "1px solid " + (checked ? "#7c3aed" : "#2d3148") }}>
+                    <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: checked ? "#7c3aed" : "transparent", border: "1.5px solid " + (checked ? "#7c3aed" : "#475569"), color: "#fff", fontSize: 11 }}>{checked ? "✓" : ""}</span>
+                    {monthLabel(m)}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button disabled={reportGenerating} onClick={exportReportPDF} style={{ ...S.btn, flex: 1, background: "#dc2626", color: "#fff", padding: 12, opacity: reportGenerating ? 0.6 : 1 }}>📄 สร้าง PDF</button>
+              <button disabled={reportGenerating} onClick={exportReportPPTX} style={{ ...S.btn, flex: 1, background: "#ea580c", color: "#fff", padding: 12, opacity: reportGenerating ? 0.6 : 1 }}>📽️ สร้าง PowerPoint</button>
+            </div>
+            {reportGenerating && <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, marginTop: 12 }}>กำลังสร้างรายงาน...</div>}
+            <button onClick={() => setShowReportModal(false)} style={{ ...S.btn, width: "100%", background: "transparent", color: "#64748b", border: "1px solid #2d3148", padding: 10, marginTop: 10 }}>ปิด</button>
+          </div>
+        </div>
+      )}
+
       <div style={S.hdr}>
         <div className="header-inner" style={S.hdrIn}>
           <div className="app-title-block" style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1087,6 +1324,7 @@ export default function App() {
                   <option>ทั้งหมด</option>{PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
                 {hasFilters && <button onClick={clearFilters} style={{ ...S.btn, background: "#334155", color: "#94a3b8", padding: "10px 14px" }}>ล้าง</button>}
+                <button onClick={openReportModal} style={{ ...S.btn, background: "#7c3aed", color: "#fff", padding: "10px 16px" }}>📊 สร้างรายงาน</button>
               </div>
             </div>
 

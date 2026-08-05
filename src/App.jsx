@@ -829,6 +829,35 @@ export default function App() {
     return Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
   }, [filtered]);
 
+  // จัดกลุ่มประเภทสินค้าเป็น 4 กลุ่มหลัก: Tire MC, Tire BC, Tube MC, Tube BC
+  const PRODUCT_CATEGORIES = ["Tire MC", "Tire BC", "Tube MC", "Tube BC"];
+  const productCategory = (productType) => {
+    if (!productType) return null;
+    if (productType.startsWith("Tire MC")) return "Tire MC";
+    if (productType.startsWith("Tire BC")) return "Tire BC";
+    if (productType.startsWith("Tube MC")) return "Tube MC";
+    if (productType.startsWith("Tube BC")) return "Tube BC";
+    return null;
+  };
+
+  // Top 10 เบอร์ยางที่พบปัญหามากสุด แยกตามแต่ละกลุ่ม (ใช้ items ใดๆ ที่ระบุ — สำหรับ dashboard และรายงาน)
+  const topModelsByCategory = (items) => {
+    const byCategory = {};
+    PRODUCT_CATEGORIES.forEach(c => { byCategory[c] = {}; });
+    items.forEach(i => {
+      const cat = productCategory(i.productType);
+      if (!cat || !i.tireModel) return;
+      byCategory[cat][i.tireModel] = (byCategory[cat][i.tireModel] || 0) + 1;
+    });
+    const result = {};
+    PRODUCT_CATEGORIES.forEach(c => {
+      result[c] = Object.entries(byCategory[c]).map(([model, count]) => ({ model, count })).sort((a, b) => b.count - a.count).slice(0, 10);
+    });
+    return result;
+  };
+
+  const topModelsData = useMemo(() => topModelsByCategory(filtered), [filtered]);
+
   // นับจำนวนปัญหาทั้งหมด (ไม่จำกัด Top 5) จากชุดข้อมูลใดๆ ที่ระบุ — ใช้สำหรับสร้างรายงานเปรียบเทียบ
   const countIssueTypes = (items) => {
     const counts = {};
@@ -873,6 +902,7 @@ export default function App() {
       topIssues: rows.filter(r => r.current > 0).slice(0, 5),
       newIssues: rows.filter(r => r.isNew),
       risingIssues: rows.filter(r => r.compare > 0 && r.pctChange >= 30).sort((a, b) => b.pctChange - a.pctChange).slice(0, 5),
+      topModels: topModelsByCategory(currentItems),
     };
   };
 
@@ -910,6 +940,16 @@ export default function App() {
     const risingHtml = a.risingIssues.length > 0
       ? a.risingIssues.map(r => '<div class="pillrow pillrow-red">📈 <b>' + r.type + '</b> — เพิ่มขึ้น ' + r.pctChange + '% (' + r.compare + ' → ' + r.current + ' ครั้ง)</div>').join("")
       : '<div class="emptynote">ไม่มีปัญหาที่เพิ่มขึ้นอย่างมีนัยสำคัญ</div>';
+
+    const modelCatColors = { "Tire MC": "#e63946", "Tire BC": "#1d4ed8", "Tube MC": "#f59e0b", "Tube BC": "#8b5cf6" };
+    const modelsHtml = ["Tire MC", "Tire BC", "Tube MC", "Tube BC"].map(cat => {
+      const list = (a.topModels && a.topModels[cat]) || [];
+      const col = modelCatColors[cat];
+      const items = list.length > 0
+        ? list.map((m, i) => '<div class="modelrow"><span class="modelrank" style="background:' + col + '">' + (i + 1) + '</span><span class="modelname">' + m.model + '</span><span class="modelcount" style="color:' + col + '">' + m.count + '</span></div>').join("")
+        : '<div class="emptynote">ยังไม่มีข้อมูล</div>';
+      return '<div class="modelcol"><div class="modelcolhead" style="border-color:' + col + ';color:' + col + '">' + cat + '</div>' + items + '</div>';
+    }).join("");
 
     const logoUrl = "/deestone-logo.png";
     const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><style>'
@@ -951,6 +991,13 @@ export default function App() {
       + '.badge-red{background:#fee2e2;color:#dc2626;} .badge-green{background:#dcfce7;color:#16a34a;}'
       + '.badge-amber{background:#fef3c7;color:#b45309;} .badge-gray{background:#f1f5f9;color:#64748b;}'
       + '.ftr{margin-top:6px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding:16px 0 22px;}'
+      + '.modelgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}'
+      + '.modelcol{border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;}'
+      + '.modelcolhead{font-size:12px;font-weight:800;border-bottom:2px solid;padding-bottom:6px;margin-bottom:8px;}'
+      + '.modelrow{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;}'
+      + '.modelrank{width:18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}'
+      + '.modelname{flex:1;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+      + '.modelcount{font-weight:800;flex-shrink:0;}'
       + '</style></head><body>'
       + '<div class="hdr"><img src="' + logoUrl + '" style="height:48px;background:#fff;border-radius:8px;padding:6px 12px;" />'
       + '<div><div class="hdrtitle">รายงานสรุปวิเคราะห์ปัญหาคุณภาพยาง</div>'
@@ -962,6 +1009,7 @@ export default function App() {
       + (a.comparePeriodLabel ? '<div class="statcard statcard-b"><div class="statval">' + a.compareTotal + '</div><div class="statlabel">รายการ (ช่วงเทียบ)</div></div>' : '')
       + '</div>'
       + '<div class="sec"><div class="sech">📊 สัดส่วนปัญหาที่พบ</div><div class="secbody">' + distributionHtml + '</div></div>'
+      + '<div class="sec"><div class="sech">🔟 เบอร์ยางที่พบปัญหามากสุด (Top 10 แต่ละกลุ่ม)</div><div class="secbody"><div class="modelgrid">' + modelsHtml + '</div></div></div>'
       + '<div class="sec"><div class="sech">🎯 ปัญหาที่ควรโฟกัส</div><div class="secbody">' + focusHtml + '</div></div>'
       + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">🆕 ปัญหาที่เพิ่งเริ่มพบ</div><div class="secbody">' + newHtml + '</div></div>' : '')
       + (a.comparePeriodLabel ? '<div class="sec"><div class="sech">📈 ปัญหาที่มีแนวโน้มเพิ่มขึ้น</div><div class="secbody">' + risingHtml + '</div></div>' : '')
@@ -1518,6 +1566,37 @@ export default function App() {
                   ))}
                 </div>
               </Card>
+            </div>
+
+            {/* Top 10 เบอร์ยางที่พบปัญหามากสุด แยกตามกลุ่ม */}
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9", marginBottom: 12 }}>🔟 เบอร์ยางที่พบปัญหามากสุด (Top 10 แต่ละกลุ่ม)</div>
+              <div className="chart-grid">
+                {PRODUCT_CATEGORIES.map(cat => {
+                  const list = topModelsData[cat] || [];
+                  const maxC = Math.max(1, ...list.map(x => x.count));
+                  return (
+                    <Card key={cat} title={null}>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: "#6366f1" }}>{cat}</div>
+                      {list.length === 0 ? <div style={{ color: "#475569", textAlign: "center", padding: "16px 0", fontSize: 13 }}>ยังไม่มีข้อมูล</div>
+                        : list.map((m, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#2d3148", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#6366f1", flexShrink: 0 }}>{i + 1}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12 }}>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e2e8f0" }}>{m.model}</span>
+                                <span style={{ fontWeight: 700, color: "#f1f5f9", flexShrink: 0, marginLeft: 6 }}>{m.count}</span>
+                              </div>
+                              <div style={{ height: 5, background: "#2d3148", borderRadius: 3 }}>
+                                <div className="bar-purple" style={{ height: "100%", width: (m.count / maxC * 100) + "%", borderRadius: 3 }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
